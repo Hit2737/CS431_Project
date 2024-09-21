@@ -3,9 +3,14 @@
 #include<fstream>
 using namespace std;
 
+
 // initializing some global variables
+
+// default variables
 const long long DEFAULT_PORT = 8080;
 const string DEFAULT_AUTH_FILE = "auth.txt";
+
+// variables to be used
 long long port = -1;
 string auth_file_address  = "";
 

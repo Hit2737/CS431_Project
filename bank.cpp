@@ -1,7 +1,42 @@
+/**
+ * @file bank.cpp
+ * @brief This file contains the implementation of a simple bank server application.
+ * 
+ * The application initializes default values for port and authentication file path,
+ * parses command line arguments to override these defaults, and provides functions
+ * to get available port and path for the authentication file.
+ * 
+ * Global Variables:
+ * - DEFAULT_PORT: The default port number (8080).
+ * - DEFAULT_AUTH_FILE: The default authentication file name ("auth.txt").
+ * - port: The port number to be used, initialized to -1.
+ * - auth_file_address: The authentication file path, initialized to an empty string.
+ * 
+ * Functions:
+ * - Get_Available_Port: Returns the available port number. Currently returns the default port.
+ * - Get_Available_Path: Returns an available path for the authentication file. If the default file exists, it creates a copy with a unique name.
+ * 
+ * Main Function:
+ * - Parses command line arguments to set the port and authentication file path.
+ * - Sets default values if not provided via command line arguments.
+ * 
+ * Command Line Arguments:
+ * - -p <port>: Sets the port number.
+ * - -P <port>: Sets the port number if not already set.
+ * - -s <auth_file>: Sets the authentication file path.
+ * - -S <auth_file>: Sets the authentication file path if not already set.
+ * 
+ * Error Handling:
+ * - If an invalid argument is provided, an error message "Invalid argument" is set.
+ */
+
+
+
 #include<iostream>
 #include<getopt.h>
 #include<fstream>
 using namespace std;
+
 
 
 // initializing some global variables
@@ -15,12 +50,27 @@ long long port = -1;
 string auth_file_address  = "";
 
 
+
+/*
+-----------------------------------------------------------------------------------------------------
+                                       FUNTION DECLARATIONS
+-----------------------------------------------------------------------------------------------------
+*/
+
+
+
+/*
+                                        UTILITY FUNCTIONS
+*/
+
+
 // function to get the available port
 long long Get_Available_Port(){
 
     // This needs to be implemented properly
     return DEFAULT_PORT;
 }
+
 
 // function to get the available path
 string Get_Available_Path(){
@@ -41,13 +91,25 @@ string Get_Available_Path(){
 }
 
 
+
+/*
+                                       TRANSACTION FUNCTIONS
+*/
+
+
+
+
+
+
+
+
 int main(int argc, char *argv[]) {
 
     int option;
     string error;
 
     // parsing the command line arguments
-    while ((option = getopt(argc, argv, "a:")) != -1) {
+    while ((option = getopt(argc, argv, "p:P:")) != -1) {
         switch (option) {
             case 'p':
                 port = stoll(optarg);
@@ -59,6 +121,7 @@ int main(int argc, char *argv[]) {
                 if (auth_file_address=="") auth_file_address = optarg;
             default:
                 error = "Invalid argument";
+                break;
         }
     }
 

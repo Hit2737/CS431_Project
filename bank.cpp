@@ -42,8 +42,8 @@ using namespace std;
 // initializing some global variables
 
 // default variables
-const long long DEFAULT_PORT = 8080;
-const string DEFAULT_AUTH_FILE = "auth.txt";
+const long long DEFAULT_PORT = 3000;
+const string DEFAULT_AUTH_FILE = "bank.auth";
 
 // variables to be used
 long long port = -1;
@@ -81,13 +81,80 @@ string Get_Available_Path(){
     string UPDATED_PATH;
 
     // if the default file already exists, we will try to make a copy file for that
-    while(file==NULL){
+    while(file!=NULL){
         copy++;
-        UPDATED_PATH = (DEFAULT_AUTH_FILE.substr(0, path_length-4)+"("+to_string(copy)+")");
+        UPDATED_PATH = (DEFAULT_AUTH_FILE.substr(0, path_length-5)+"("+to_string(copy)+").auth");
         file = fopen(UPDATED_PATH.c_str(), "r");
     }
 
     return UPDATED_PATH;
+}
+
+// checks if the string is a number
+inline bool is_number(const std::string& s)
+{
+    for(char curChar : s){
+        if (!isdigit(curChar)) return false;
+    }
+    return true;
+}
+
+
+// function to parse the command line arguments
+int parse_arguments(int argc, char *argv[]) {
+    int option;
+
+    struct option long_options[] = {
+        {"port", required_argument, nullptr, 'p'},
+        {"PORT", required_argument, nullptr, 'P'},
+        {"auth_file", required_argument, nullptr, 's'},
+        {"AUTH_FILE", required_argument, nullptr, 'S'},
+        {"help", no_argument, 0, 'h'},
+        {nullptr, 0, nullptr, 0}
+    };
+
+
+    while((option = getopt_long(argc, argv, "p:P:s:S:h", long_options, nullptr)) != -1){
+        switch(option){
+            case 'p':
+                if (is_number(optarg)){
+                    port = stoll(optarg);
+                }
+                else{
+                    cout<<"Invalid argument !\n\nPlease run \n./bank -h \t or \t ./bank --help "<<endl;
+                    return 1;
+                }
+                break;
+            case 'P':
+                if (is_number(optarg)){
+                    port = stoll(optarg);
+                }
+                else{
+                    cout<<"Invalid argument !\n\nPlease run \n./bank -h \t or \t ./bank --help "<<endl;
+                    return 1;
+                }
+                break;
+            case 's':
+                auth_file_address = optarg;
+                break;
+            case 'S':
+                auth_file_address = optarg;
+                break;
+            case 'h':
+                cout<<"Usage: ./bank [OPTION]..."<<endl;
+                cout<<"Start a bank server\n\n";
+                cout<<"-p, --port\t\t\tPort number to listen on\n";
+                cout<<"-P, --PORT\t\t\tPort number to listen on\n";
+                cout<<"-s, --auth_file\t\t\tPath to authentication file\n";
+                cout<<"-S, --AUTH_FILE\t\t\tPath to authentication file\n";
+                cout<<"-h, --help\t\t\tDisplay this help and exit\n";
+                return 1;
+            default:
+                cout<<"Invalid argument !\n\nPlease run \n./bank -h \t or \t ./bank --help "<<endl;
+                return 1;
+        }
+    }
+    return 0;
 }
 
 
@@ -105,24 +172,10 @@ string Get_Available_Path(){
 
 int main(int argc, char *argv[]) {
 
-    int option;
-    string error;
-
     // parsing the command line arguments
-    while ((option = getopt(argc, argv, "p:P:")) != -1) {
-        switch (option) {
-            case 'p':
-                port = stoll(optarg);
-            case 'P':
-                if (port==-1) port = stoll(optarg);
-            case 's':
-                auth_file_address = optarg;
-            case 'S':
-                if (auth_file_address=="") auth_file_address = optarg;
-            default:
-                error = "Invalid argument";
-                break;
-        }
+    // If the arguments are invalid function will return 1
+    if (parse_arguments(argc, argv)){
+        return 1;       
     }
 
     // setting the default values if not provided

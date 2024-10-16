@@ -1,0 +1,16 @@
+Options:
+
+    -h, Output usage information
+    -s, To specify the path of authentication file of the ATM provided by the Bank (required)
+    -i, Specify the IP address default is 127.0.0.1
+    -p, Specify the port number default is 3000
+    -c, To specify the path of the card file of the user provided by the ATM (required)
+    -a, Specity the Account Name
+
+Required Modes: 
+
+    -n [...], Create a New Account with the Balance
+    -d [...], Specify Amount to Deposit
+    -w [...], Specify Valid Amount to Withdraw
+    -g,       Get Account Balance
+    

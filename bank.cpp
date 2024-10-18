@@ -32,9 +32,10 @@
 
 
 
-#include<iostream>
+#include<bits/stdc++.h>
 #include<getopt.h>
 #include<fstream>
+#include<sqlite3.h>
 using namespace std;
 
 
@@ -56,6 +57,138 @@ string auth_file_address  = "";
                                        FUNTION DECLARATIONS
 -----------------------------------------------------------------------------------------------------
 */
+
+
+/*
+                                        MONEY ARITHMETIC FUNCTIONS
+*/
+
+void format_correction(string &money){
+    
+    long long ind = -1;
+    for(int i=0; i<money.size(); i++){
+        if (money[i] == '.'){
+            if (ind==-1){
+                ind = i;
+            }
+            else{
+                money = "";
+                return;
+            }
+        }
+        else if(!isdigit(money[i])){
+            money = "";
+            return;
+        }
+    }
+    
+    if (ind < money.size()-3){
+        money = "";
+        return;
+    }
+
+    if (ind==-1){
+        money.push_back('.');
+        ind = money.size()-1;
+    }
+    while(money.size() - 3ll < ind){
+        money.push_back('0');
+    }
+}
+
+
+
+string add(string old, string delta){
+
+    string ans = "";
+
+    long long old_ptr = old.size()-1, delta_ptr = delta.size()-1, carry = 0;
+
+    while(old_ptr>=0 && delta_ptr>=0){
+        if (old[old_ptr]=='.' && delta[delta_ptr]=='.'){
+            ans.push_back('.');
+        }
+        else{
+            int sum_of_chars = int(old[old_ptr] - '0') + int(delta[delta_ptr] - '0') + carry;
+            if (sum_of_chars >= 10){
+                sum_of_chars -= 10;
+                carry = 1;
+            }
+            else{
+                carry = 0;
+            }
+            ans.push_back(char(sum_of_chars));
+        }
+
+        old_ptr--;
+        delta_ptr--;
+    }
+
+    while(old_ptr>=0){
+        int sum_of_chars = int(old[old_ptr] - '0') + carry;
+        if (sum_of_chars >= 10){
+            sum_of_chars -= 10;
+            carry = 1;
+        }
+        else{
+            carry = 0;
+        }
+        ans.push_back(char(sum_of_chars));
+    }
+
+    while(delta_ptr>=0){
+        int sum_of_chars = int(delta[delta_ptr]-'0') + carry;
+        if (sum_of_chars >= 10){
+            sum_of_chars -= 10;
+            carry = 1;
+        }
+        else{
+            carry = 0;
+        }
+        ans.push_back(char(sum_of_chars));
+    }
+
+
+    reverse(ans.begin(), ans.end());
+}
+
+
+string sub(string old, string delta){
+
+    string ans = "";
+
+    if (old.size()<delta.size()){
+        return "";
+    }
+    
+    int borrow = 0;
+    
+    long long old_ptr = old.size()-1, delta_ptr = delta.size()-1;
+    while(old_ptr>=0 && delta_ptr>=0){
+        int sub_chars = int(old[old_ptr] - '0') - borrow - int(delta[delta_ptr] - '0');
+        if (sub_chars < 0){
+            borrow = 1;
+            sub_chars += 10;
+        }
+        else{
+            borrow = 0;
+        }
+
+        ans.push_back(sub_chars);
+        old_ptr--;
+        delta_ptr--;
+    }
+
+    if (old.size()==delta.size()){
+        if (borrow){
+            return "";
+        }
+    }
+    
+    reverse(ans.begin(), ans.end());
+
+    return ans;
+}
 
 
 
@@ -157,6 +290,63 @@ int parse_arguments(int argc, char *argv[]) {
     return 0;
 }
 
+
+/*
+                                        DATABASE FUNCTIONS
+
+*/
+
+
+int executeSQL(sqlite3* DB, const string &sql, char** messageError){
+    return sqlite3_exec(DB, sql.c_str(), NULL, 0, messageError);
+}
+
+
+void create_table(sqlite3* DB){
+
+    string create_table_sql =   "CREATE TABLE IF NOT EXITSTS accounts ("
+                                "NAME       TEXT    PRIMARY KEY     NOT NULL, "
+                                "MONEY      TEXT    NOT NULL,"
+                                "PASSWORD   TEXT    NOT NULL );";
+
+    char* messageError;
+
+    if (executeSQL(DB, create_table_sql, &messageError) != SQLITE_OK){
+        cerr << "Table creation error :- " << messageError << endl;
+        sqlite3_free(messageError);
+    }
+}
+
+
+void create_account(sqlite3* DB, string name, string money, string password){
+
+    char* messageError;
+
+    string insert_account_sql = "INSTERT INTO accounts (NAME, MONEY, PASSWORD) VALUES ( " + name + ", " + money + "," + password + ")";
+
+    if (executeSQL(DB, insert_account_sql, &messageError) != SQLITE_OK){
+        cerr << "Account creation error :- " << messageError << endl;
+        sqlite3_free(messageError);
+    }
+
+}
+
+
+string withdraw(sqlite3* DB, string name, string delta, string password){
+    
+    char* messageError;
+
+    string begin_transaction = "BEGIN TRANSACTION;";
+
+    if (executeSQL(DB, begin_transaction, &messageError) != SQLITE_OK){
+        cerr << "Begin transaction error :- " << messageError << endl;
+        sqlite3_free(messageError);
+        return NULL;
+    }
+
+    string withdraw_sql = "";
+
+}
 
 
 /*

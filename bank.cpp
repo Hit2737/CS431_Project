@@ -55,7 +55,7 @@ string auth_file_address  = "";
 /*
 -----------------------------------------------------------------------------------------------------
                                        FUNTION DECLARATIONS
------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------for(int i=old.size()-1; i>=0; i--)----------------------------
 */
 
 
@@ -318,6 +318,13 @@ void create_table(sqlite3* DB){
 }
 
 
+
+/*
+                                       TRANSACTION FUNCTIONS
+*/
+
+
+
 void create_account(sqlite3* DB, string name, string money, string password){
 
     char* messageError;
@@ -330,6 +337,7 @@ void create_account(sqlite3* DB, string name, string money, string password){
     }
 
 }
+
 
 
 string withdraw(sqlite3* DB, string name, string delta, string password){
@@ -346,14 +354,8 @@ string withdraw(sqlite3* DB, string name, string delta, string password){
 
     string withdraw_sql = "";
 
+    
 }
-
-
-/*
-                                       TRANSACTION FUNCTIONS
-*/
-
-
 
 
 

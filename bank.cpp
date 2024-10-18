@@ -55,7 +55,7 @@ string auth_file_address  = "";
 /*
 -----------------------------------------------------------------------------------------------------
                                        FUNTION DECLARATIONS
--------------------------------------------------------------------------for(int i=old.size()-1; i>=0; i--)----------------------------
+-----------------------------------------------------------------------------------------------------
 */
 
 
@@ -291,6 +291,16 @@ int parse_arguments(int argc, char *argv[]) {
 }
 
 
+bool check_input_for_sql_injection(const string &s){
+    for(char c:s){
+        if (c=='\''){
+            return false;
+        }
+    }
+    return true;
+}
+
+
 /*
                                         DATABASE FUNCTIONS
 
@@ -329,18 +339,47 @@ void create_account(sqlite3* DB, string name, string money, string password){
 
     char* messageError;
 
-    string insert_account_sql = "INSTERT INTO accounts (NAME, MONEY, PASSWORD) VALUES ( " + name + ", " + money + "," + password + ")";
+    string insert_account_sql = "INSERT INTO accounts (NAME, MONEY, PASSWORD) VALUES ( " + name + ", " + money + "," + password + ")";
 
-    if (executeSQL(DB, insert_account_sql, &messageError) != SQLITE_OK){
-        cerr << "Account creation error :- " << messageError << endl;
+    // Execute the SQL command
+    if (executeSQL(DB, insert_account_sql, &messageError) != SQLITE_OK) {
+        // Handle specific errors
+        if (string(messageError).find("UNIQUE constraint failed") != string::npos) {
+            cerr << "Account already exists for name: " << name << endl;
+        } else {
+            cerr << "Account creation error: " << messageError << endl;
+        }
         sqlite3_free(messageError);
     }
 
 }
 
 
+string get_balance(sqlite3* DB, string name){
+    char* messageError;
 
-string withdraw(sqlite3* DB, string name, string delta, string password){
+
+    string sql = "SELECT MONEY FROM accounts WHERE NAME= '" + name + "';";
+    sqlite3_stmt*  stmt;
+
+    if (sqlite3_prepare_v2(DB, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        cerr << "SQL prepare error: " << sqlite3_errmsg(DB) << endl;
+        return "";
+    }
+
+
+    string current_balance;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        current_balance = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    } else {
+        sqlite3_finalize(stmt);
+        return "AC_NOT_EXISTS";
+    }
+    sqlite3_finalize(stmt);
+}
+
+
+string withdraw(sqlite3* DB, string name, string delta){
     
     char* messageError;
 
@@ -349,13 +388,85 @@ string withdraw(sqlite3* DB, string name, string delta, string password){
     if (executeSQL(DB, begin_transaction, &messageError) != SQLITE_OK){
         cerr << "Begin transaction error :- " << messageError << endl;
         sqlite3_free(messageError);
-        return NULL;
+        return "";
     }
 
-    string withdraw_sql = "";
+    string current_balance = get_balance(DB, name);
 
-    
+    string new_balance = sub(current_balance, delta);
+
+    if (new_balance.empty()){
+        string rollback_transaction = "ROLLBACK;";
+        executeSQL(DB, rollback_transaction, &messageError);
+        return "INSUFFICIENT_BALANCE";
+    }
+
+    // Update the account with the new balance
+    string update_sql = "UPDATE accounts SET MONEY='" + new_balance + "' WHERE NAME='" + name + "';";
+
+    if (executeSQL(DB, update_sql, &messageError) != SQLITE_OK) {
+        cerr << "Update balance error: " << messageError << endl;
+        sqlite3_free(messageError);
+        // Rollback transaction
+        string rollback_transaction = "ROLLBACK;";
+        executeSQL(DB, rollback_transaction, &messageError);
+        return "";
+    }
+
+
+    // Commit the transaction
+    string commit_transaction = "COMMIT;";
+    if (executeSQL(DB, commit_transaction, &messageError) != SQLITE_OK) {
+        cerr << "Commit transaction error: " << messageError << endl;
+        sqlite3_free(messageError);
+        return "";
+    }
+
+    return new_balance;
 }
+
+
+string deposite(sqlite3* DB, string name, string delta){
+    
+    char* messageError;
+
+    string begin_transaction = "BEGIN TRANSACTION;";
+
+    if (executeSQL(DB, begin_transaction, &messageError) != SQLITE_OK){
+        cerr << "Begin transaction error :- " << messageError << endl;
+        sqlite3_free(messageError);
+        return "";
+    }
+
+    string current_balance = get_balance(DB, name);
+
+    string new_balance = add(current_balance, delta);
+
+    // Update the account with the new balance
+    string update_sql = "UPDATE accounts SET MONEY='" + new_balance + "' WHERE NAME='" + name + "';";
+
+    if (executeSQL(DB, update_sql, &messageError) != SQLITE_OK) {
+        cerr << "Update balance error: " << messageError << endl;
+        sqlite3_free(messageError);
+        // Rollback transaction
+        string rollback_transaction = "ROLLBACK;";
+        executeSQL(DB, rollback_transaction, &messageError);
+        return "";
+    }
+
+
+    // Commit the transaction
+    string commit_transaction = "COMMIT;";
+    if (executeSQL(DB, commit_transaction, &messageError) != SQLITE_OK) {
+        cerr << "Commit transaction error: " << messageError << endl;
+        sqlite3_free(messageError);
+        return "";
+    }
+
+    return new_balance;
+}
+
+
 
 
 

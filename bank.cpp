@@ -39,6 +39,11 @@
 #include <arpa/inet.h>
 #include <nlohmann/json.hpp>
 #include <jsoncpp/json/json.h>
+#include <openssl/rsa.h>
+#include <openssl/pem.h>
+#include <openssl/err.h>
+#include <openssl/bn.h>
+#include <openssl/evp.h>
 using namespace std;
 using namespace nlohmann;
 using namespace Json;
@@ -337,7 +342,7 @@ string Get_Available_Path()
 }
 
 // checks if the string is a number
-inline bool is_number(const std::string &s)
+inline bool is_number(const string &s)
 {
     for (char curChar : s)
     {
@@ -426,6 +431,171 @@ int parse_arguments(int argc, char *argv[])
     }
     return 0;
 }
+/*
+                                        SECURITY FUNCTIONS
+
+*/
+// Generate RSA key pair (public and private)
+void generateRSAKeyPair() {
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
+    EVP_PKEY *pkey = NULL;
+    
+    if (!ctx) {
+        cerr << "Error initializing context for RSA key generation\n";
+        return;
+    }
+
+    if (EVP_PKEY_keygen_init(ctx) <= 0) {
+        cerr << "Error initializing key generation\n";
+        EVP_PKEY_CTX_free(ctx);
+        return;
+    }
+
+    if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 2048) <= 0) {
+        cerr << "Error setting RSA key size\n";
+        EVP_PKEY_CTX_free(ctx);
+        return;
+    }
+
+    if (EVP_PKEY_keygen(ctx, &pkey) <= 0) {
+        cerr << "Error generating RSA key pair\n";
+        EVP_PKEY_CTX_free(ctx);
+        return;
+    }
+
+    // Write private key to file
+    FILE *privateKeyFile = fopen("private_key.pem", "wb");
+    if (privateKeyFile) {
+        PEM_write_PrivateKey(privateKeyFile, pkey, NULL, NULL, 0, NULL, NULL);
+        fclose(privateKeyFile);
+    }
+
+    // Write public key to file
+    FILE *publicKeyFile = fopen("public_key.pem", "wb");
+    if (publicKeyFile) {
+        PEM_write_PUBKEY(publicKeyFile, pkey);
+        fclose(publicKeyFile);
+    }
+
+    EVP_PKEY_free(pkey);
+    EVP_PKEY_CTX_free(ctx);
+
+    cout << "RSA key pair generated and saved.\n";
+}
+
+// Encrypt data with public key
+string encryptWithPublicKey(const string &data, const string &publicKeyFilePath) {
+    // Open the public key file
+    FILE *publicKeyFile = fopen(publicKeyFilePath.c_str(), "rb");
+    if (!publicKeyFile) {
+        cerr << "Failed to open public key file.\n";
+        return "";
+    }
+
+    EVP_PKEY *publicKey = PEM_read_PUBKEY(publicKeyFile, NULL, NULL, NULL);
+    fclose(publicKeyFile);
+
+    if (!publicKey) {
+        cerr << "Error reading public key.\n";
+        return "";
+    }
+
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(publicKey, NULL);
+    if (!ctx) {
+        EVP_PKEY_free(publicKey);
+        cerr << "Error creating context for encryption.\n";
+        return "";
+    }
+
+    if (EVP_PKEY_encrypt_init(ctx) <= 0) {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(publicKey);
+        cerr << "Error initializing encryption.\n";
+        return "";
+    }
+
+    // Determine buffer size for encrypted data
+    size_t outlen;
+    if (EVP_PKEY_encrypt(ctx, NULL, &outlen, (const unsigned char*)data.c_str(), data.length()) <= 0) {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(publicKey);
+        cerr << "Error determining encrypted buffer size.\n";
+        return "";
+    }
+
+    vector<unsigned char> outbuf(outlen);
+
+    // Encrypt the data
+    if (EVP_PKEY_encrypt(ctx, outbuf.data(), &outlen, (const unsigned char*)data.c_str(), data.length()) <= 0) {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(publicKey);
+        cerr << "Error during encryption.\n";
+        return "";
+    }
+
+    EVP_PKEY_CTX_free(ctx);
+    EVP_PKEY_free(publicKey);
+
+    return string(outbuf.begin(), outbuf.end());
+}
+
+// Decrypt data with private key
+string decryptWithPrivateKey(const string &encryptedData, const string &privateKeyFilePath) {
+    // Open the private key file
+    FILE *privateKeyFile = fopen(privateKeyFilePath.c_str(), "rb");
+    if (!privateKeyFile) {
+        cerr << "Failed to open private key file.\n";
+        return "";
+    }
+
+    EVP_PKEY *privateKey = PEM_read_PrivateKey(privateKeyFile, NULL, NULL, NULL);
+    fclose(privateKeyFile);
+
+    if (!privateKey) {
+        cerr << "Error reading private key.\n";
+        return "";
+    }
+
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(privateKey, NULL);
+    if (!ctx) {
+        EVP_PKEY_free(privateKey);
+        cerr << "Error creating context for decryption.\n";
+        return "";
+    }
+
+    if (EVP_PKEY_decrypt_init(ctx) <= 0) {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(privateKey);
+        cerr << "Error initializing decryption.\n";
+        return "";
+    }
+
+    // Determine buffer size for decrypted data
+    size_t outlen;
+    if (EVP_PKEY_decrypt(ctx, NULL, &outlen, (const unsigned char*)encryptedData.c_str(), encryptedData.length()) <= 0) {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(privateKey);
+        cerr << "Error determining decrypted buffer size.\n";
+        return "";
+    }
+
+    vector<unsigned char> outbuf(outlen);
+
+    // Decrypt the data
+    if (EVP_PKEY_decrypt(ctx, outbuf.data(), &outlen, (const unsigned char*)encryptedData.c_str(), encryptedData.length()) <= 0) {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(privateKey);
+        cerr << "Error during decryption.\n";
+        return "";
+    }
+
+    EVP_PKEY_CTX_free(ctx);
+    EVP_PKEY_free(privateKey);
+
+    return string(outbuf.begin(), outbuf.end());
+}
+
+
 
 /*
                                         DATABASE FUNCTIONS
@@ -980,7 +1150,7 @@ int main(int argc, char *argv[])
     ofstream authfileout("bank.auth");
     authfileout << pass;
     authfileout.close();
-
+    generateRSAKeyPair();
     signal(SIGTERM, handle_signal);
 
     start_server(port);

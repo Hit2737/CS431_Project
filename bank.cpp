@@ -52,7 +52,7 @@ using namespace Json;
 
 // default variables
 const long long DEFAULT_PORT = 3000;
-const long long BUFFER_SIZE = 1024;
+const long long BUFFER_SIZE = 4096;
 const string DEFAULT_AUTH_FILE = "bank.auth";
 
 // variables to be used
@@ -436,100 +436,130 @@ int parse_arguments(int argc, char *argv[])
 
 */
 // Generate RSA key pair (public and private)
-void generateRSAKeyPair() {
+
+void generateRSAKeyPairs()
+{
     EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
     EVP_PKEY *pkey = NULL;
-    
-    if (!ctx) {
+
+    if (!ctx)
+    {
         cerr << "Error initializing context for RSA key generation\n";
         return;
     }
 
-    if (EVP_PKEY_keygen_init(ctx) <= 0) {
+    if (EVP_PKEY_keygen_init(ctx) <= 0)
+    {
         cerr << "Error initializing key generation\n";
         EVP_PKEY_CTX_free(ctx);
         return;
     }
 
-    if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 2048) <= 0) {
+    if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 2048) <= 0)
+    {
         cerr << "Error setting RSA key size\n";
         EVP_PKEY_CTX_free(ctx);
         return;
     }
 
-    if (EVP_PKEY_keygen(ctx, &pkey) <= 0) {
+    if (EVP_PKEY_keygen(ctx, &pkey) <= 0)
+    {
         cerr << "Error generating RSA key pair\n";
         EVP_PKEY_CTX_free(ctx);
         return;
     }
 
-    // Write private key to file
     FILE *privateKeyFile = fopen("private_key.pem", "wb");
-    if (privateKeyFile) {
-        PEM_write_PrivateKey(privateKeyFile, pkey, NULL, NULL, 0, NULL, NULL);
-        fclose(privateKeyFile);
-    }
-
-    // Write public key to file
     FILE *publicKeyFile = fopen("public_key.pem", "wb");
-    if (publicKeyFile) {
-        PEM_write_PUBKEY(publicKeyFile, pkey);
-        fclose(publicKeyFile);
+
+    if (!privateKeyFile || !publicKeyFile)
+    {
+        cerr << "Error opening key files\n";
+        return;
     }
 
+    if (!PEM_write_PrivateKey(privateKeyFile, pkey, NULL, NULL, 0, NULL, NULL))
+    {
+        cerr << "Error writing private key\n";
+        fclose(privateKeyFile);
+        fclose(publicKeyFile);
+        return;
+    }
+
+    if (!PEM_write_PUBKEY(publicKeyFile, pkey))
+    {
+        cerr << "Error writing public key\n";
+        fclose(privateKeyFile);
+        fclose(publicKeyFile);
+        return;
+    }
+
+    fclose(privateKeyFile);
+    fclose(publicKeyFile);
     EVP_PKEY_free(pkey);
     EVP_PKEY_CTX_free(ctx);
-
-    cout << "RSA key pair generated and saved.\n";
 }
 
-// Encrypt data with public key
-string encryptWithPublicKey(const string &data, const string &publicKeyFilePath) {
-    // Open the public key file
-    FILE *publicKeyFile = fopen(publicKeyFilePath.c_str(), "rb");
-    if (!publicKeyFile) {
-        cerr << "Failed to open public key file.\n";
+// ................................  ENCRYPTION FUNCTIONS  ................................
+
+string encryptUsingPublicKey(string &message)
+{
+    FILE *publicKeyFile = fopen("public_key.pem", "rb");
+    if (!publicKeyFile)
+    {
+        cerr << "Error opening public key file\n";
         return "";
     }
 
     EVP_PKEY *publicKey = PEM_read_PUBKEY(publicKeyFile, NULL, NULL, NULL);
     fclose(publicKeyFile);
 
-    if (!publicKey) {
-        cerr << "Error reading public key.\n";
+    if (!publicKey)
+    {
+        cerr << "Error reading public key\n";
         return "";
     }
 
     EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(publicKey, NULL);
-    if (!ctx) {
+    if (!ctx)
+    {
         EVP_PKEY_free(publicKey);
-        cerr << "Error creating context for encryption.\n";
+        cerr << "Error creating context for encryption\n";
         return "";
     }
 
-    if (EVP_PKEY_encrypt_init(ctx) <= 0) {
+    if (EVP_PKEY_encrypt_init(ctx) <= 0)
+    {
         EVP_PKEY_CTX_free(ctx);
         EVP_PKEY_free(publicKey);
-        cerr << "Error initializing encryption.\n";
+        cerr << "Error initializing encryption\n";
         return "";
     }
 
-    // Determine buffer size for encrypted data
+    if (EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_PADDING) <= 0)
+    {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(publicKey);
+        cerr << "Error setting padding\n";
+        return "";
+    }
+
     size_t outlen;
-    if (EVP_PKEY_encrypt(ctx, NULL, &outlen, (const unsigned char*)data.c_str(), data.length()) <= 0) {
+    if (EVP_PKEY_encrypt(ctx, NULL, &outlen, (const unsigned char *)message.c_str(), message.length()) <= 0)
+    {
         EVP_PKEY_CTX_free(ctx);
         EVP_PKEY_free(publicKey);
-        cerr << "Error determining encrypted buffer size.\n";
+        cerr << "Error determining buffer size for encryption\n";
         return "";
     }
 
     vector<unsigned char> outbuf(outlen);
 
-    // Encrypt the data
-    if (EVP_PKEY_encrypt(ctx, outbuf.data(), &outlen, (const unsigned char*)data.c_str(), data.length()) <= 0) {
+    if (EVP_PKEY_encrypt(ctx, outbuf.data(), &outlen, (const unsigned char *)message.c_str(), message.length()) <= 0)
+    {
         EVP_PKEY_CTX_free(ctx);
         EVP_PKEY_free(publicKey);
-        cerr << "Error during encryption.\n";
+        cerr << "Error encrypting data\n";
         return "";
     }
 
@@ -539,53 +569,56 @@ string encryptWithPublicKey(const string &data, const string &publicKeyFilePath)
     return string(outbuf.begin(), outbuf.end());
 }
 
-// Decrypt data with private key
-string decryptWithPrivateKey(const string &encryptedData, const string &privateKeyFilePath) {
-    // Open the private key file
-    FILE *privateKeyFile = fopen(privateKeyFilePath.c_str(), "rb");
-    if (!privateKeyFile) {
-        cerr << "Failed to open private key file.\n";
+string decryptUsingPrivateKey(string &message)
+{
+    FILE *privateKeyFile = fopen("private_key.pem", "rb");
+    if (!privateKeyFile)
+    {
+        cerr << "Error opening private key file\n";
         return "";
     }
 
     EVP_PKEY *privateKey = PEM_read_PrivateKey(privateKeyFile, NULL, NULL, NULL);
     fclose(privateKeyFile);
 
-    if (!privateKey) {
-        cerr << "Error reading private key.\n";
+    if (!privateKey)
+    {
+        cerr << "Error reading private key\n";
         return "";
     }
 
     EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(privateKey, NULL);
-    if (!ctx) {
+    if (!ctx)
+    {
         EVP_PKEY_free(privateKey);
-        cerr << "Error creating context for decryption.\n";
+        cerr << "Error creating context for decryption\n";
         return "";
     }
 
-    if (EVP_PKEY_decrypt_init(ctx) <= 0) {
+    if (EVP_PKEY_decrypt_init(ctx) <= 0)
+    {
         EVP_PKEY_CTX_free(ctx);
         EVP_PKEY_free(privateKey);
-        cerr << "Error initializing decryption.\n";
+        cerr << "Error initializing decryption\n";
         return "";
     }
 
-    // Determine buffer size for decrypted data
     size_t outlen;
-    if (EVP_PKEY_decrypt(ctx, NULL, &outlen, (const unsigned char*)encryptedData.c_str(), encryptedData.length()) <= 0) {
+    if (EVP_PKEY_decrypt(ctx, NULL, &outlen, (const unsigned char *)message.c_str(), message.length()) <= 0)
+    {
         EVP_PKEY_CTX_free(ctx);
         EVP_PKEY_free(privateKey);
-        cerr << "Error determining decrypted buffer size.\n";
+        cerr << "Error determining buffer size for decryption\n";
         return "";
     }
 
     vector<unsigned char> outbuf(outlen);
 
-    // Decrypt the data
-    if (EVP_PKEY_decrypt(ctx, outbuf.data(), &outlen, (const unsigned char*)encryptedData.c_str(), encryptedData.length()) <= 0) {
+    if (EVP_PKEY_decrypt(ctx, outbuf.data(), &outlen, (const unsigned char *)message.c_str(), message.length()) <= 0)
+    {
         EVP_PKEY_CTX_free(ctx);
         EVP_PKEY_free(privateKey);
-        cerr << "Error during decryption.\n";
+        cerr << "Error decrypting data\n";
         return "";
     }
 
@@ -594,8 +627,6 @@ string decryptWithPrivateKey(const string &encryptedData, const string &privateK
 
     return string(outbuf.begin(), outbuf.end());
 }
-
-
 
 /*
                                         DATABASE FUNCTIONS
@@ -835,7 +866,6 @@ void handle_client(int client_socket)
 {
 
     char buffer[BUFFER_SIZE];
-
     while (true)
     {
 
@@ -851,7 +881,7 @@ void handle_client(int client_socket)
         string message(buffer);
 
         // Print the received message from the client (ATM)
-        cout << "Received from ATM: " << message << endl;
+        // cout << "Received from ATM: " << message << endl;
 
         json request;
         try
@@ -861,17 +891,19 @@ void handle_client(int client_socket)
         catch (...)
         {
             // Invalid JSON, ignore the request
+            cout << "Invalid JSON received from ATM\n";
+            send(client_socket, "Invalid JSON\n", 13, 0);
             continue;
         }
 
         // Process the request based on the operation
         json response;
+        string auth = request["auth"];
         string name = request["account"];
         string password = request.contains("password") ? request["password"] : "";
         string mode = request["mode"];
 
         // validate account and password
-
         if (!check_input_for_sql_injection(name))
         {
             string response_message = "Invalid input for Name\n";
@@ -885,6 +917,46 @@ void handle_client(int client_socket)
             string response_message = "Invalid input for Password\n";
             send(client_socket, response_message.c_str(), response_message.length(), 0);
             cout << "Invalid input for Password :- " + password + "\n";
+            continue;
+        }
+
+        // if (mode == "k")
+        // {
+        //     string k = request["key"];
+        //     string v = request["iv"];
+        //     string key = decryptUsingPrivateKey(k);
+        //     string iv = decryptUsingPrivateKey(v);
+        //     cout << "Key :- " << key << endl
+        //          << " IV :- " << iv << endl;
+        //     send(client_socket, "Key and IV received\n", 21, 0);
+        //     continue;
+        // }
+
+        // read content of the auth file
+        ifstream auth_file("bank.auth");
+        string auth_content;
+        if (auth_file.is_open())
+        {
+            getline(auth_file, auth_content);
+            auth_file.close();
+        }
+        else
+        {
+            string response_message = "Error reading auth file\n";
+            send(client_socket, response_message.c_str(), response_message.length(), 0);
+            cout << "Error reading auth file\n";
+            continue;
+        }
+
+        if (auth_content == auth)
+        {
+            cout << "Authentication successful\n";
+        }
+        else
+        {
+            string response_message = "Authentication failed\n";
+            send(client_socket, response_message.c_str(), response_message.length(), 0);
+            cout << "Authentication failed\n";
             continue;
         }
 
@@ -1150,7 +1222,7 @@ int main(int argc, char *argv[])
     ofstream authfileout("bank.auth");
     authfileout << pass;
     authfileout.close();
-    generateRSAKeyPair();
+    generateRSAKeyPairs();
     signal(SIGTERM, handle_signal);
 
     start_server(port);

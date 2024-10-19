@@ -946,6 +946,7 @@ void handle_client(int client_socket)
 {
 
     char buffer[BUFFER_SIZE];
+    string key, iv;
     while (true)
     {
 
@@ -958,20 +959,22 @@ void handle_client(int client_socket)
         }
 
         // Parse the JSON message from the client
-        string message(buffer);
-
-        if (message.size() == 257)
+        string enc_message(buffer);
+        string message;
+        if (enc_message.size() == 257)
         {
-            message.pop_back();
-            string key_iv = decryptUsingPrivateKey(message);
-            string key = key_iv.substr(0, 128);
-            string iv = key_iv.substr(128, key_iv.size() - 128);
+            enc_message.pop_back();
+            string key_iv = decryptUsingPrivateKey(enc_message);
+            key = key_iv.substr(0, 128);
+            iv = key_iv.substr(128, key_iv.size() - 128);
             send(client_socket, "Key and IV received\n", 21, 0);
             continue;
         }
         // Decrypt the message using the symmetric key and IV
+        else{
+            message = decryptUsingSYM_KEY(key, iv, enc_message);
+        }
 
-        // ... //
         json request;
         try
         {

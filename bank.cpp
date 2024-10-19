@@ -64,7 +64,7 @@ string auth_file_address  = "";
 */
 
 void format_correction(string &money){
-    
+
     long long ind = -1;
     for(int i=0; i<money.size(); i++){
         if (money[i] == '.'){
@@ -81,7 +81,7 @@ void format_correction(string &money){
             return;
         }
     }
-    
+
     if (ind < money.size()-3){
         money = "";
         return;
@@ -91,9 +91,21 @@ void format_correction(string &money){
         money.push_back('.');
         ind = money.size()-1;
     }
-    while(money.size() - 3ll < ind){
+
+    long long money_sz = money.size();
+    while(money_sz - 3ll < ind){
         money.push_back('0');
+        money_sz = money.size();
     }
+
+
+    for(int i=0; i<money_sz-4; i++){
+        if (money.front() == '0'){
+            money.erase(money.begin());
+        }
+        else break;
+    }
+    
 }
 
 
@@ -117,7 +129,7 @@ string add(string old, string delta){
             else{
                 carry = 0;
             }
-            ans.push_back(char(sum_of_chars));
+            ans.push_back(char(sum_of_chars + '0'));
         }
 
         old_ptr--;
@@ -133,7 +145,8 @@ string add(string old, string delta){
         else{
             carry = 0;
         }
-        ans.push_back(char(sum_of_chars));
+        ans.push_back(char(sum_of_chars + '0'));
+        old_ptr--;
     }
 
     while(delta_ptr>=0){
@@ -145,11 +158,29 @@ string add(string old, string delta){
         else{
             carry = 0;
         }
-        ans.push_back(char(sum_of_chars));
+        ans.push_back(char(sum_of_chars + '0'));
+        delta_ptr--;
     }
 
+    if (carry){
+        ans.push_back('1');
+    }
+
+    long long ans_ptr = ans.size()-1;
+
+    while(ans_ptr>=4){
+        if (ans[ans_ptr]=='0'){
+            ans.pop_back();
+        }
+        else{
+            break;
+        }
+        ans_ptr--;
+    }
 
     reverse(ans.begin(), ans.end());
+
+    return ans;
 }
 
 
@@ -165,16 +196,23 @@ string sub(string old, string delta){
     
     long long old_ptr = old.size()-1, delta_ptr = delta.size()-1;
     while(old_ptr>=0 && delta_ptr>=0){
-        int sub_chars = int(old[old_ptr] - '0') - borrow - int(delta[delta_ptr] - '0');
-        if (sub_chars < 0){
-            borrow = 1;
-            sub_chars += 10;
+
+        if (old[old_ptr]=='.' && delta[delta_ptr]=='.'){
+            ans.push_back('.');
         }
         else{
-            borrow = 0;
+            int sub_chars = int(old[old_ptr] - '0') - borrow - int(delta[delta_ptr] - '0');
+            if (sub_chars < 0){
+                borrow = 1;
+                sub_chars += 10;
+            }
+            else{
+                borrow = 0;
+            }
+
+            ans.push_back(sub_chars + '0');
         }
 
-        ans.push_back(sub_chars);
         old_ptr--;
         delta_ptr--;
     }
@@ -184,7 +222,36 @@ string sub(string old, string delta){
             return "";
         }
     }
-    
+
+    while(old_ptr>=0){
+        int sub_chars = int(old[old_ptr] - '0') - borrow;
+
+        if (sub_chars < 0){
+            borrow = 1;
+            sub_chars += 10;
+        }
+        else{
+            borrow = 0;
+        }
+
+        ans.push_back(sub_chars + '0');
+        old_ptr--;
+    }
+
+
+
+    long long ans_ptr = ans.size()-1;
+
+    while(ans_ptr>=4){
+        if (ans[ans_ptr]=='0'){
+            ans.pop_back();
+        }
+        else{
+            break;
+        }
+        ans_ptr--;
+    }
+
     reverse(ans.begin(), ans.end());
 
     return ans;
@@ -195,6 +262,16 @@ string sub(string old, string delta){
 /*
                                         UTILITY FUNCTIONS
 */
+
+
+bool check_input_for_sql_injection(const string &s){
+    for(char c:s){
+        if (c=='\''){
+            return false;
+        }
+    }
+    return true;
+}
 
 
 // function to get the available port
@@ -291,15 +368,6 @@ int parse_arguments(int argc, char *argv[]) {
 }
 
 
-bool check_input_for_sql_injection(const string &s){
-    for(char c:s){
-        if (c=='\''){
-            return false;
-        }
-    }
-    return true;
-}
-
 
 /*
                                         DATABASE FUNCTIONS
@@ -376,6 +444,8 @@ string get_balance(sqlite3* DB, string name){
         return "AC_NOT_EXISTS";
     }
     sqlite3_finalize(stmt);
+
+    return current_balance;
 }
 
 
@@ -402,7 +472,7 @@ string withdraw(sqlite3* DB, string name, string delta){
     }
 
     // Update the account with the new balance
-    string update_sql = "UPDATE accounts SET MONEY='" + new_balance + "' WHERE NAME='" + name + "';";
+    string update_sql = "UPDATE accounts SET MONEY=\'" + new_balance + "\' WHERE NAME=\'" + name + "\';";
 
     if (executeSQL(DB, update_sql, &messageError) != SQLITE_OK) {
         cerr << "Update balance error: " << messageError << endl;
@@ -443,7 +513,7 @@ string deposite(sqlite3* DB, string name, string delta){
     string new_balance = add(current_balance, delta);
 
     // Update the account with the new balance
-    string update_sql = "UPDATE accounts SET MONEY='" + new_balance + "' WHERE NAME='" + name + "';";
+    string update_sql = "UPDATE accounts SET MONEY=\'" + new_balance + "\' WHERE NAME=\'" + name + "\';";
 
     if (executeSQL(DB, update_sql, &messageError) != SQLITE_OK) {
         cerr << "Update balance error: " << messageError << endl;
@@ -470,9 +540,6 @@ string deposite(sqlite3* DB, string name, string delta){
 
 
 
-
-
-
 int main(int argc, char *argv[]) {
 
     // parsing the command line arguments
@@ -480,6 +547,8 @@ int main(int argc, char *argv[]) {
     if (parse_arguments(argc, argv)){
         return 1;       
     }
+
+
 
     // setting the default values if not provided
     if (port==-1){

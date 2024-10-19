@@ -30,6 +30,7 @@
  * - If an invalid argument is provided, an error message "Invalid argument" is set.
  */
 
+<<<<<<< HEAD
 #include <bits/stdc++.h>
 #include <getopt.h>
 #include <fstream>
@@ -39,10 +40,26 @@
 #include <arpa/inet.h>
 #include <nlohmann/json.hpp>
 #include <jsoncpp/json/json.h>
-using namespace std;
+=======
+
+#include <bits/stdc++.h>
+#include <getopt.h>
+#include <fstream>
+#include <sqlite3.h>
+#include <csignal>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <nlohmann/json.hpp>
+#include <jsoncpp/json/json.h>
+    >>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1 using namespace std;
 using namespace nlohmann;
 using namespace Json;
 
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
 // initializing some global variables
 
 // default variables
@@ -54,6 +71,7 @@ const string DEFAULT_AUTH_FILE = "bank.auth";
 long long port = -1;
 string auth_file_address = "";
 int server_fd;
+sqlite3 *DB;
 
 /*
 -----------------------------------------------------------------------------------------------------
@@ -61,6 +79,7 @@ int server_fd;
 -----------------------------------------------------------------------------------------------------
 */
 
+<<<<<<< HEAD
 /*
                                         COMMUNICATION FUNCTIONS
 */
@@ -218,6 +237,10 @@ void start_server(int port)
         }
     }
 }
+=======
+
+
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
 
 /*
                                         MONEY ARITHMETIC FUNCTIONS
@@ -248,6 +271,7 @@ void format_correction(string &money)
         }
     }
 
+<<<<<<< HEAD
     if (ind < money.size() - 3)
     {
         money = "";
@@ -256,6 +280,10 @@ void format_correction(string &money)
 
     if (ind == -1)
     {
+=======
+    if (ind == -1)
+    {
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
         money.push_back('.');
         ind = money.size() - 1;
     }
@@ -276,6 +304,11 @@ void format_correction(string &money)
         else
             break;
     }
+<<<<<<< HEAD
+=======
+
+    money = money.substr(0, ind + 3);
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
 }
 
 string add(string old, string delta)
@@ -575,23 +608,74 @@ int parse_arguments(int argc, char *argv[])
 
 */
 
+<<<<<<< HEAD
 int executeSQL(sqlite3 *DB, const string &sql, char **messageError)
 {
+=======
+
+int executeSQL(const string &sql, char **messageError)
+{
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
     return sqlite3_exec(DB, sql.c_str(), NULL, 0, messageError);
 }
 
 void create_table(sqlite3 *DB)
 {
 
+<<<<<<< HEAD
     string create_table_sql = "CREATE TABLE IF NOT EXISTS accounts ("
                               "NAME       TEXT    PRIMARY KEY     NOT NULL, "
                               "MONEY      TEXT    NOT NULL,"
                               "PASSWORD   TEXT    NOT NULL );";
+=======
+    string check_password(string name, string password)
+    {
+
+        char *messageError;
+
+        string sql = "SELECT PASSWORD FROM accounts WHERE NAME= \'" + name + "\';";
+        sqlite3_stmt *stmt;
+
+        if (sqlite3_prepare_v2(DB, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+        {
+            return "SQL prepare error: " + string(sqlite3_errmsg(DB)) + "\n";
+        }
+
+        string current_password;
+        if (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            current_password = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+        }
+        else
+        {
+            sqlite3_finalize(stmt);
+            return "AC_NOT_EXISTS";
+        }
+        sqlite3_finalize(stmt);
+
+        if (password == current_password)
+        {
+            return "";
+        }
+        else
+            return "Wrong password";
+    }
+
+    void create_table()
+    {
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
 
     char *messageError;
 
+<<<<<<< HEAD
     if (executeSQL(DB, create_table_sql, &messageError) != SQLITE_OK)
     {
+=======
+        char *messageError;
+
+        if (executeSQL(create_table_sql, &messageError) != SQLITE_OK)
+        {
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
         cerr << "Table creation error :- " << messageError << endl;
         sqlite3_free(messageError);
     }
@@ -604,6 +688,7 @@ void create_table(sqlite3 *DB)
 void create_account(sqlite3 *DB, string name, string money, string password)
 {
 
+<<<<<<< HEAD
     char *messageError;
 
     string insert_account_sql = "INSERT INTO accounts (NAME, MONEY, PASSWORD) VALUES ( \'" + name + "\', \'" + money + "\',\'" + password + "\');";
@@ -636,6 +721,45 @@ string get_balance(sqlite3 *DB, string name)
     {
         cerr << "SQL prepare error: " << sqlite3_errmsg(DB) << endl;
         return "";
+=======
+
+        string create_account(string name, string money, string password)
+        {
+
+            string final_message = "";
+            char *messageError;
+
+            string insert_account_sql = "INSERT INTO accounts (NAME, MONEY, PASSWORD) VALUES ( \'" + name + "\', \'" + money + "\',\'" + password + "\');";
+
+            // Execute the SQL command
+            if (executeSQL(insert_account_sql, &messageError) != SQLITE_OK)
+            {
+                // Handle specific errors
+                if (string(messageError).find("UNIQUE constraint failed") != string::npos)
+                {
+                    final_message = "Account already exists for name: " + name + "\n";
+                }
+                else
+                {
+                    final_message = "Account creation error: " + string(messageError) + "\n";
+                }
+                sqlite3_free(messageError);
+            }
+
+            return final_message;
+        }
+
+        string get_balance(string name)
+        {
+            char *messageError;
+
+            string sql = "SELECT MONEY FROM accounts WHERE NAME= \'" + name + "\';";
+            sqlite3_stmt *stmt;
+
+            if (sqlite3_prepare_v2(DB, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+            {
+                return "SQL prepare error: " + string(sqlite3_errmsg(DB)) + "\n";
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
     }
 
     string current_balance;
@@ -656,98 +780,437 @@ string get_balance(sqlite3 *DB, string name)
 string withdraw(sqlite3 *DB, string name, string delta)
 {
 
+<<<<<<< HEAD
     char *messageError;
+=======
+            string withdraw(string name, string delta)
+            {
 
+                char *messageError;
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
+
+    string final_message = "";
     string begin_transaction = "BEGIN TRANSACTION;";
 
+<<<<<<< HEAD
     if (executeSQL(DB, begin_transaction, &messageError) != SQLITE_OK)
     {
         cerr << "Begin transaction error :- " << messageError << endl;
+=======
+                if (executeSQL(begin_transaction, &messageError) != SQLITE_OK)
+                {
+                    final_message = "Begin transaction error :- " + string(messageError) + "\n";
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
         sqlite3_free(messageError);
-        return "";
+        return final_message;
     }
 
-    string current_balance = get_balance(DB, name);
+    string current_balance = get_balance(name);
+    string error = current_balance;
+    format_correction(current_balance);
+    if (current_balance == "")
+    {
+        final_message = error;
+        string rollback_transaction = "ROLLBACK;";
+        executeSQL(rollback_transaction, &messageError);
+        return final_message;
+    }
 
     string new_balance = sub(current_balance, delta);
 
     if (new_balance.empty())
     {
         string rollback_transaction = "ROLLBACK;";
-        executeSQL(DB, rollback_transaction, &messageError);
+        executeSQL(rollback_transaction, &messageError);
         return "INSUFFICIENT_BALANCE";
     }
 
     // Update the account with the new balance
     string update_sql = "UPDATE accounts SET MONEY=\'" + new_balance + "\' WHERE NAME=\'" + name + "\';";
 
+<<<<<<< HEAD
     if (executeSQL(DB, update_sql, &messageError) != SQLITE_OK)
     {
+=======
+                if (executeSQL(update_sql, &messageError) != SQLITE_OK)
+                {
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
         cerr << "Update balance error: " << messageError << endl;
         sqlite3_free(messageError);
         // Rollback transaction
         string rollback_transaction = "ROLLBACK;";
-        executeSQL(DB, rollback_transaction, &messageError);
+        executeSQL(rollback_transaction, &messageError);
         return "";
     }
 
     // Commit the transaction
     string commit_transaction = "COMMIT;";
+<<<<<<< HEAD
     if (executeSQL(DB, commit_transaction, &messageError) != SQLITE_OK)
     {
+=======
+                if (executeSQL(commit_transaction, &messageError) != SQLITE_OK)
+                {
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
         cerr << "Commit transaction error: " << messageError << endl;
         sqlite3_free(messageError);
         return "";
     }
 
-    return new_balance;
+    return final_message;
 }
 
 string deposit(sqlite3 *DB, string name, string delta)
 {
 
+<<<<<<< HEAD
     char *messageError;
+=======
+                string deposit(string name, string delta)
+                {
+
+                    char *messageError;
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
 
     string begin_transaction = "BEGIN TRANSACTION;";
+    string final_message = "";
 
+<<<<<<< HEAD
     if (executeSQL(DB, begin_transaction, &messageError) != SQLITE_OK)
     {
         cerr << "Begin transaction error :- " << messageError << endl;
+=======
+                    if (executeSQL(begin_transaction, &messageError) != SQLITE_OK)
+                    {
+                        final_message = "Begin transaction error :- " + string(messageError) + "\n";
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
         sqlite3_free(messageError);
-        return "";
+        return final_message;
     }
 
-    string current_balance = get_balance(DB, name);
+    string current_balance = get_balance(name);
+    string error = current_balance;
+    format_correction(current_balance);
+    if (current_balance == "")
+    {
+        final_message = error;
+        string rollback_transaction = "ROLLBACK;";
+        executeSQL(rollback_transaction, &messageError);
+        return final_message;
+    }
 
     string new_balance = add(current_balance, delta);
 
     // Update the account with the new balance
     string update_sql = "UPDATE accounts SET MONEY=\'" + new_balance + "\' WHERE NAME=\'" + name + "\';";
 
+<<<<<<< HEAD
     if (executeSQL(DB, update_sql, &messageError) != SQLITE_OK)
     {
         cerr << "Update balance error: " << messageError << endl;
+=======
+                    if (executeSQL(update_sql, &messageError) != SQLITE_OK)
+                    {
+                        final_message = "Update balance error: " + string(messageError) + "\n";
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
         sqlite3_free(messageError);
         // Rollback transaction
         string rollback_transaction = "ROLLBACK;";
-        executeSQL(DB, rollback_transaction, &messageError);
-        return "";
+        executeSQL(rollback_transaction, &messageError);
+        return final_message;
     }
 
     // Commit the transaction
     string commit_transaction = "COMMIT;";
+<<<<<<< HEAD
     if (executeSQL(DB, commit_transaction, &messageError) != SQLITE_OK)
     {
         cerr << "Commit transaction error: " << messageError << endl;
+=======
+                    if (executeSQL(commit_transaction, &messageError) != SQLITE_OK)
+                    {
+                        final_message = "Commit transaction error: " + string(messageError) + "\n";
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
         sqlite3_free(messageError);
-        return "";
+        return final_message;
     }
 
-    return new_balance;
+    return final_message;
 }
 
+<<<<<<< HEAD
 int main(int argc, char *argv[])
 {
+=======
+
+                /*
+                                                        COMMUNICATION FUNCTIONS
+                */
+
+                void handle_client(int client_socket)
+                {
+
+                    char buffer[BUFFER_SIZE];
+
+                    while (true)
+                    {
+
+                        memset(buffer, 0, BUFFER_SIZE);
+                        int n = read(client_socket, buffer, BUFFER_SIZE - 1);
+
+                        if (n <= 0)
+                        {
+                            break; // Connection closed by the client
+                        }
+
+                        // Parse the JSON message from the client
+                        string message(buffer);
+
+                        // Print the received message from the client (ATM)
+                        cout << "Received from ATM: " << message << endl;
+
+                        json request;
+                        try
+                        {
+                            request = json::parse(message);
+                        }
+                        catch (...)
+                        {
+                            // Invalid JSON, ignore the request
+                            continue;
+                        }
+
+                        // Process the request based on the operation
+                        json response;
+                        string name = request["account"];
+                        string password = request.contains("password") ? request["password"] : "";
+                        string mode = request["mode"];
+
+                        // validate account and password
+
+                        if (!check_input_for_sql_injection(name))
+                        {
+                            string response_message = "Invalid input for Name\n";
+                            send(client_socket, response_message.c_str(), response_message.length(), 0);
+                            cout << "Invalid input for Name :- " + name + "\n";
+                            continue;
+                        }
+
+                        if (!check_input_for_sql_injection(password))
+                        {
+                            string response_message = "Invalid input for Password\n";
+                            send(client_socket, response_message.c_str(), response_message.length(), 0);
+                            cout << "Invalid input for Password :- " + password + "\n";
+                            continue;
+                        }
+
+                        if (mode != "n")
+                        {
+                            string pass_check = check_password(name, password);
+                            if (pass_check != "")
+                            {
+                                string response_message = "Error Occured while checking the password :- " + pass_check + "\n";
+                                send(client_socket, response_message.c_str(), response_message.length(), 0);
+                                cout << "Error Occured :- " + pass_check + " while checking the password for the account :- " + name + "\n";
+                                continue;
+                            }
+                        }
+
+                        if (mode == "n")
+                        {
+                            // new account
+                            string money = to_string(request["initial_balance"]);
+                            string response_message;
+
+                            format_correction(money);
+                            if (money == "")
+                            {
+                                response_message = "Invalid input for money\n";
+                                send(client_socket, response_message.c_str(), response_message.length(), 0);
+                                cout << "Invalid input for Balance :- " + money + "\n";
+                                continue;
+                            }
+
+                            string error = create_account(name, money, password);
+
+                            if (error == "")
+                            {
+                                response_message = "Account has been created successfully!\n"
+                                                   "Your details are as follows:-\n"
+                                                   "Account Name :- " +
+                                                   name +
+                                                   "\n Account Balance :- " + money + "\n";
+                                send(client_socket, response_message.c_str(), response_message.length(), 0);
+                                cout << "Account with name :- " + name + " and Balance :- " + money + " is ceated successfully.\n";
+                                continue;
+                            }
+
+                            response_message = "Error Occured :- " + error + "\n";
+                            cout << "Error occured :- " + error + " for creating the account " + name + " and balance " + money + "\n";
+                            send(client_socket, response_message.c_str(), response_message.length(), 0);
+                        }
+                        else if (mode == "d")
+                        {
+                            // deposit
+
+                            string delta = to_string(request["amount"]);
+                            string response_message;
+
+                            format_correction(delta);
+                            if (delta == "")
+                            {
+                                response_message = "Invalid input for deposit amount\n";
+                                send(client_socket, response_message.c_str(), response_message.length(), 0);
+                                cout << "Invalid input for deposit amount :- " + delta + "\n";
+                                continue;
+                            }
+
+                            string error = deposit(name, delta);
+
+                            if (error != "")
+                            {
+                                response_message = "Error Occured :- " + error + "\n";
+                                send(client_socket, response_message.c_str(), response_message.length(), 0);
+                                cout << "Error Occured :- " << error << "\n";
+                                continue;
+                            }
+
+                            string changed_balance = get_balance(name);
+
+                            response_message = "Money deposited succesfully and your updated balance is " + changed_balance + "\n";
+                            cout << "Money deposited from the account " + name + " and the updated balance is " + changed_balance + "\n";
+                            send(client_socket, response_message.c_str(), response_message.length(), 0);
+                        }
+                        else if (mode == "w")
+                        {
+                            // withdraw
+
+                            string delta = to_string(request["amount"]);
+                            string response_message;
+
+                            format_correction(delta);
+                            if (delta == "")
+                            {
+                                response_message = "Invalid input for withdraw amount\n";
+                                send(client_socket, response_message.c_str(), response_message.length(), 0);
+                                cout << "Invalid input for withdraw amount :- " + delta + "\n";
+                                continue;
+                            }
+
+                            string error = withdraw(name, delta);
+
+                            if (error != "")
+                            {
+                                response_message = "Error Occured :- " + error + "\n";
+                                send(client_socket, response_message.c_str(), response_message.length(), 0);
+                                cout << "Error Occured :- " << error << "\n";
+                                continue;
+                            }
+
+                            string changed_balance = get_balance(name);
+
+                            response_message = "Money withdrawed succesfully and your updated balance is " + changed_balance + "\n";
+                            cout << "Money withdrawed from the account " + name + " and the updated balance is " + changed_balance + "\n";
+                            send(client_socket, response_message.c_str(), response_message.length(), 0);
+                        }
+                        else if (mode == "g")
+                        {
+                            string response_message;
+                            string current_balance = get_balance(name);
+                            string error = current_balance;
+                            format_correction(current_balance);
+                            if (current_balance == "")
+                            {
+                                response_message = "Error Occured :- " + error + " for account :- " + name + "\n";
+                                cout << "Error Occured :- " + error + " for account :- " + name + "\n";
+                                send(client_socket, response_message.c_str(), response_message.length(), 0);
+                                continue;
+                            }
+
+                            response_message = "Your Current Balance is :- " + current_balance + "\n";
+                            cout << "Balance queried for the account :- " + name + " and its balance is :- " + current_balance + "\n";
+                            send(client_socket, response_message.c_str(), response_message.length(), 0);
+                        }
+                        else
+                        {
+                            close(client_socket);
+                        }
+                    }
+
+                    close(client_socket);
+                }
+
+                void handle_signal(int signal)
+                {
+                    if (signal == SIGTERM)
+                    {
+                        cout << "Shutting down bank server..." << endl;
+                        close(server_fd);
+                        exit(0);
+                    }
+                }
+
+                // Function to start the bank server
+                void start_server(int port)
+                {
+
+                    struct sockaddr_in address;
+                    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+
+                    if (server_fd == 0)
+                    {
+                        perror("Socket creation failed");
+                        exit(255);
+                    }
+
+                    memset(&address, 0, sizeof(address));
+                    address.sin_family = AF_INET;
+                    address.sin_addr.s_addr = INADDR_ANY;
+                    address.sin_port = htons(port);
+
+                    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0)
+                    {
+                        perror("Bind failed");
+                        close(server_fd);
+                        exit(255);
+                    }
+
+                    if (listen(server_fd, SOMAXCONN) < 0)
+                    {
+                        perror("Listen failed");
+                        close(server_fd);
+                        exit(255);
+                    }
+
+                    cout << "Bank server listening on port " << port << "..." << endl;
+
+                    // Accept incoming connections and handle each one
+                    while (true)
+                    {
+                        int client_socket;
+                        socklen_t addr_len = sizeof(address);
+                        if ((client_socket = accept(server_fd, (struct sockaddr *)&address, &addr_len)) < 0)
+                        {
+                            perror("Accept failed");
+                            continue;
+                        }
+
+                        if (fork() == 0)
+                        {
+                            close(server_fd); // Child process doesn't need the listener
+                            handle_client(client_socket);
+                            exit(0);
+                        }
+                        else
+                        {
+                            close(client_socket); // Parent process doesn't need this socket
+                        }
+                    }
+                }
+
+                int main(int argc, char *argv[])
+                {
+>>>>>>> 03688a7c2678fae0458ee277a81d826bb722f9d1
 
     // parsing the command line arguments
     // If the arguments are invalid function will return 1
@@ -765,6 +1228,16 @@ int main(int argc, char *argv[])
     {
         auth_file_address = Get_Available_Path();
     }
+
+    int exit = sqlite3_open("example.db", &DB);
+
+    if (exit)
+    {
+        std::cerr << "Error open DB: " << sqlite3_errmsg(DB) << std::endl;
+        return -1;
+    }
+
+    create_table();
 
     // Set up signal handling for clean shutdown
     signal(SIGTERM, handle_signal);

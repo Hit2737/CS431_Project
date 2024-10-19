@@ -1,7 +1,13 @@
 {
   "files.associations": {
     "ostream": "cpp",
-    "iostream": "cpp"
+    "iostream": "cpp",
+    "string": "cpp",
+    "string_view": "cpp",
+    "map": "cpp",
+    "set": "cpp",
+    "unordered_map": "cpp",
+    "unordered_set": "cpp"
   },
   "C_Cpp_Runner.msvcBatchPath": ""
 }

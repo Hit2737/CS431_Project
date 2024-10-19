@@ -36,20 +36,27 @@
 #include<getopt.h>
 #include<fstream>
 #include<sqlite3.h>
+#include<csignal>
+#include<unistd.h>
+#include<arpa/inet.h>
+#include<nlohmann/json.hpp>
+#include<jsoncpp/json/json.h>
 using namespace std;
-
+using namespace nlohmann;
+using namespace Json;
 
 
 // initializing some global variables
 
 // default variables
 const long long DEFAULT_PORT = 3000;
+const long long BUFFER_SIZE = 1024;
 const string DEFAULT_AUTH_FILE = "bank.auth";
 
 // variables to be used
 long long port = -1;
 string auth_file_address  = "";
-
+int server_fd;
 
 
 /*
@@ -57,6 +64,148 @@ string auth_file_address  = "";
                                        FUNTION DECLARATIONS
 -----------------------------------------------------------------------------------------------------
 */
+
+
+/*
+                                        COMMUNICATION FUNCTIONS
+*/
+
+
+void handle_client(int client_socket) {
+
+    char buffer[BUFFER_SIZE];
+    
+    while (true) {
+
+        memset(buffer, 0, BUFFER_SIZE);
+        int n = read(client_socket, buffer, BUFFER_SIZE - 1);
+
+        if (n <= 0) {
+            break; // Connection closed by the client
+        }
+
+        // Parse the JSON message from the client
+        string message(buffer);
+
+        // Print the received message from the client (ATM)
+        cout << "Received from ATM: " << message << endl;
+
+        json request;
+        try {
+            request = json::parse(message);
+        } catch (...) {
+            // Invalid JSON, ignore the request
+            continue;
+        }
+
+        // Process the request based on the operation
+        json response;
+        string account = request["account"];
+        string password = request.contains("password") ? request["password"] : "";
+        string mode = request["mode"];
+
+        // validate account and password
+
+        // ... //
+        
+        if (mode=="n"){
+            // new account
+            string initial_balance = to_string(request["initial_balance"]);
+
+            // ... //
+        }
+        else if(mode == "d"){
+            // deposit
+
+            string amount = to_string(request["ammount"]);
+
+            // ... //
+        }
+        else if(mode == "w"){
+            // withdraw
+
+            string amount = to_string(request["ammount"]);
+
+            // ... //
+        }
+        else if(mode == "g"){
+            // get balance
+        }
+        else{
+            close(client_socket);
+        }
+
+
+        // Send the response back to the client
+        string response_message = "kuch nahi bhejna";
+        send(client_socket, response_message.c_str(), response_message.length(), 0);
+
+        // Print the response that is going to be logged
+        cout << "Logging transaction: " << response_message << endl;
+        
+    }
+
+    close(client_socket);
+}
+
+
+void handle_signal(int signal) {
+    if (signal == SIGTERM) {
+        cout << "Shutting down bank server..." << endl;
+        close(server_fd);
+        exit(0);
+    }
+}
+
+// Function to start the bank server
+void start_server(int port) {
+
+    struct sockaddr_in address;
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    
+    if (server_fd == 0) {
+        perror("Socket creation failed");
+        exit(255);
+    }
+
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(port);
+
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        perror("Bind failed");
+        close(server_fd);
+        exit(255);
+    }
+
+    if (listen(server_fd, SOMAXCONN) < 0) {
+        perror("Listen failed");
+        close(server_fd);
+        exit(255);
+    }
+
+    cout << "Bank server listening on port " << port << "..." << endl;
+
+    // Accept incoming connections and handle each one
+    while (true) {
+        int client_socket;
+        socklen_t addr_len = sizeof(address);
+        if ((client_socket = accept(server_fd, (struct sockaddr *)&address, &addr_len)) < 0) {
+            perror("Accept failed");
+            continue;
+        }
+
+        if (fork() == 0) {
+            close(server_fd); // Child process doesn't need the listener
+            handle_client(client_socket);
+            exit(0);
+        } else {
+            close(client_socket); // Parent process doesn't need this socket
+        }
+    }
+}
+
 
 
 /*
@@ -382,7 +531,7 @@ int executeSQL(sqlite3* DB, const string &sql, char** messageError){
 
 void create_table(sqlite3* DB){
 
-    string create_table_sql =   "CREATE TABLE IF NOT EXITSTS accounts ("
+    string create_table_sql =   "CREATE TABLE IF NOT EXISTS accounts ("
                                 "NAME       TEXT    PRIMARY KEY     NOT NULL, "
                                 "MONEY      TEXT    NOT NULL,"
                                 "PASSWORD   TEXT    NOT NULL );";
@@ -407,8 +556,9 @@ void create_account(sqlite3* DB, string name, string money, string password){
 
     char* messageError;
 
-    string insert_account_sql = "INSERT INTO accounts (NAME, MONEY, PASSWORD) VALUES ( " + name + ", " + money + "," + password + ")";
+    string insert_account_sql = "INSERT INTO accounts (NAME, MONEY, PASSWORD) VALUES ( \'" + name + "\', \'" + money + "\',\'" + password + "\');";
 
+    cout<<insert_account_sql<<endl;
     // Execute the SQL command
     if (executeSQL(DB, insert_account_sql, &messageError) != SQLITE_OK) {
         // Handle specific errors
@@ -496,7 +646,7 @@ string withdraw(sqlite3* DB, string name, string delta){
 }
 
 
-string deposite(sqlite3* DB, string name, string delta){
+string deposit(sqlite3* DB, string name, string delta){
     
     char* messageError;
 
@@ -548,8 +698,6 @@ int main(int argc, char *argv[]) {
         return 1;       
     }
 
-
-
     // setting the default values if not provided
     if (port==-1){
         port = Get_Available_Port();
@@ -557,6 +705,13 @@ int main(int argc, char *argv[]) {
     else if (auth_file_address==""){
         auth_file_address = Get_Available_Path();
     }
+
+    // Set up signal handling for clean shutdown
+    signal(SIGTERM, handle_signal);
+
+    // Start the bank server
+    start_server(port);
+
 
     return 0;
 }

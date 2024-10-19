@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <openssl/pem.h>
 #include <openssl/evp.h>
+#include <openssl/hmac.h>
 #include <openssl/rand.h>
 #include <iomanip>
 #include <sstream>
@@ -326,7 +327,8 @@ void parseArguments(int argc, char *argv[], string &error)
     check_req_args(error);
 }
 
-// ................................  GENERATE RANDOM PASSWORD  ................................
+// ................................  GENERATION FUNCTIONS  ................................
+
 void generateKeyAndIV(string &key, string &iv)
 {
     const string characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -422,7 +424,22 @@ void generateRSAKeyPairs()
     EVP_PKEY_CTX_free(ctx);
 }
 
-// ................................  ENCRYPTION FUNCTIONS  ................................
+string generateMAC(const string &key, const string &iv, const string &message, size_t mac_length = 32)
+{
+    string data = iv + message;
+
+    unsigned char mac[EVP_MAX_MD_SIZE];
+    unsigned int mac_size = 0;
+
+    HMAC(EVP_sha256(), key.data(), key.size(), reinterpret_cast<const unsigned char *>(data.data()), data.size(), mac, &mac_size);
+
+    mac_size = min(mac_size, static_cast<unsigned int>(mac_length));
+    string message_with_mac = message + string(reinterpret_cast<const char *>(mac), mac_size);
+
+    return message_with_mac;
+}
+
+// ................................  ENCRYPTION-DECRYPTION FUNCTIONS  ................................
 
 string encryptUsingPublicKey(string &message)
 {
@@ -556,6 +573,86 @@ string decryptUsingPrivateKey(string &message)
     return string(outbuf.begin(), outbuf.end());
 }
 
+string encryptUsingSYM_KEY(string &key, string &iv, string &message)
+{
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (!ctx)
+    {
+        cerr << "Error creating context for symmetric encryption\n";
+        return "";
+    }
+
+    if (EVP_EncryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, reinterpret_cast<const unsigned char *>(key.c_str()), reinterpret_cast<const unsigned char *>(iv.c_str())) <= 0)
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        cerr << "Error initializing symmetric encryption\n";
+        return "";
+    }
+
+    int outlen = message.length() + EVP_CIPHER_block_size(EVP_aes_128_cbc());
+    vector<unsigned char> outbuf(outlen);
+
+    if (EVP_EncryptUpdate(ctx, outbuf.data(), &outlen, reinterpret_cast<const unsigned char *>(message.c_str()), message.length()) <= 0)
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        cerr << "Error encrypting data\n";
+        return "";
+    }
+
+    int finallen = outlen;
+    if (EVP_EncryptFinal_ex(ctx, outbuf.data() + outlen, &outlen) <= 0)
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        cerr << "Error finalizing encryption\n";
+        return "";
+    }
+
+    finallen += outlen;
+    EVP_CIPHER_CTX_free(ctx);
+
+    return string(outbuf.begin(), outbuf.begin() + finallen);
+}
+
+string decryptUsingSYM_KEY(string &key, string &iv, string &message)
+{
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (!ctx)
+    {
+        cerr << "Error creating context for symmetric decryption\n";
+        return "";
+    }
+
+    if (EVP_DecryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, reinterpret_cast<const unsigned char *>(key.c_str()), reinterpret_cast<const unsigned char *>(iv.c_str())) <= 0)
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        cerr << "Error initializing symmetric decryption\n";
+        return "";
+    }
+
+    int outlen = message.length() + EVP_CIPHER_block_size(EVP_aes_128_cbc());
+    vector<unsigned char> outbuf(outlen);
+
+    if (EVP_DecryptUpdate(ctx, outbuf.data(), &outlen, reinterpret_cast<const unsigned char *>(message.c_str()), message.length()) <= 0)
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        cerr << "Error decrypting data\n";
+        return "";
+    }
+
+    size_t finallen = outlen;
+    if (EVP_DecryptFinal_ex(ctx, outbuf.data() + outlen, &outlen) <= 0)
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        cerr << "Error finalizing decryption\n";
+        return "";
+    }
+
+    finallen += outlen;
+    EVP_CIPHER_CTX_free(ctx);
+
+    return string(outbuf.begin(), outbuf.begin() + finallen);
+}
+
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------
 //                                                                  COMMUNICATION FUNCTIONS
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -588,12 +685,11 @@ string sendMessageToServer(const string &message, const string &ip, int port)
         perror("Connection to the bank server failed");
         exit(255);
     }
-    // Clear buffer before receiving the server's response
+
     memset(buffer, 0, BUFFER_SIZE);
     generateKeyAndIV(SYM_KEY, IV);
-    // Key and IV are generated elsewhere and assumed to be available.
-    cout << "Key :- " << SYM_KEY << endl
-         << " IV :- " << IV << endl;
+    cout << "Connecting with the Bank Server..." << endl;
+
     string key_iv = SYM_KEY + IV;
     string key_iv_message;
     while (true)
@@ -604,32 +700,31 @@ string sendMessageToServer(const string &message, const string &ip, int port)
             break;
         }
     }
-
+    // Sending the Key and IV to the Bank Server for further communication
     send(sockfd, key_iv_message.c_str(), key_iv_message.size(), 0);
-    cout << key_iv_message << endl;
 
-    // Send the encrypted message to the server
-    cout << "Connecting with the Bank Server..." << endl;
     int n = read(sockfd, buffer, BUFFER_SIZE - 1);
     if (n > 0)
     {
-        buffer[n] = '\0'; // Null-terminate the buffer again
+        buffer[n] = '\0';
         cout << "Response from the Bank Server: " << string(buffer) << endl;
     }
     else
     {
         cerr << "Error: No second response received from the server." << endl;
     }
-    sleep(1);
-    // Send the original message (unencrypted) to the server after receiving its response
-    send(sockfd, message.c_str(), message.size(), 0);
-    cout << "Message sent to the Bank Server: " << message << endl;
+    sleep(0.5);
 
-    // Receive the second response from the server
+    // Encrypting the message with the symmetric key and IV
+    string encrypted_message = generateMAC(SYM_KEY, IV, message);
+
+    // Sending the Request to the Bank Server
+    send(sockfd, message.c_str(), message.size(), 0);
+
     n = read(sockfd, buffer, BUFFER_SIZE - 1);
     if (n > 0)
     {
-        buffer[n] = '\0'; // Null-terminate the buffer again
+        buffer[n] = '\0';
         cout << "Response from the Bank Server: " << string(buffer) << endl;
     }
     else
@@ -640,6 +735,7 @@ string sendMessageToServer(const string &message, const string &ip, int port)
     close(sockfd);
     return string(buffer);
 }
+
 // ................................  ATM FUNCTIONALITIES ................................
 
 void createNewAccount(const string &account, double balance, const string &cardFile, const string &ip, int port)

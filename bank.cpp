@@ -628,6 +628,86 @@ string decryptUsingPrivateKey(string &message)
     return string(outbuf.begin(), outbuf.end());
 }
 
+string encryptUsingSYM_KEY(string &key, string &iv, string &message)
+{
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (!ctx)
+    {
+        cerr << "Error creating context for symmetric encryption\n";
+        return "";
+    }
+
+    if (EVP_EncryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, reinterpret_cast<const unsigned char *>(key.c_str()), reinterpret_cast<const unsigned char *>(iv.c_str())) <= 0)
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        cerr << "Error initializing symmetric encryption\n";
+        return "";
+    }
+
+    int outlen = message.length() + EVP_CIPHER_block_size(EVP_aes_128_cbc());
+    vector<unsigned char> outbuf(outlen);
+
+    if (EVP_EncryptUpdate(ctx, outbuf.data(), &outlen, reinterpret_cast<const unsigned char *>(message.c_str()), message.length()) <= 0)
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        cerr << "Error encrypting data\n";
+        return "";
+    }
+
+    int finallen = outlen;
+    if (EVP_EncryptFinal_ex(ctx, outbuf.data() + outlen, &outlen) <= 0)
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        cerr << "Error finalizing encryption\n";
+        return "";
+    }
+
+    finallen += outlen;
+    EVP_CIPHER_CTX_free(ctx);
+
+    return string(outbuf.begin(), outbuf.begin() + finallen);
+}
+
+string decryptUsingSYM_KEY(string &key, string &iv, string &message)
+{
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (!ctx)
+    {
+        cerr << "Error creating context for symmetric decryption\n";
+        return "";
+    }
+
+    if (EVP_DecryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, reinterpret_cast<const unsigned char *>(key.c_str()), reinterpret_cast<const unsigned char *>(iv.c_str())) <= 0)
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        cerr << "Error initializing symmetric decryption\n";
+        return "";
+    }
+
+    int outlen = message.length() + EVP_CIPHER_block_size(EVP_aes_128_cbc());
+    vector<unsigned char> outbuf(outlen);
+
+    if (EVP_DecryptUpdate(ctx, outbuf.data(), &outlen, reinterpret_cast<const unsigned char *>(message.c_str()), message.length()) <= 0)
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        cerr << "Error decrypting data\n";
+        return "";
+    }
+
+    size_t finallen = outlen;
+    if (EVP_DecryptFinal_ex(ctx, outbuf.data() + outlen, &outlen) <= 0)
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        cerr << "Error finalizing decryption\n";
+        return "";
+    }
+
+    finallen += outlen;
+    EVP_CIPHER_CTX_free(ctx);
+
+    return string(outbuf.begin(), outbuf.begin() + finallen);
+}
+
 /*
                                         DATABASE FUNCTIONS
 
@@ -881,7 +961,6 @@ void handle_client(int client_socket)
         string message(buffer);
 
         // Print the received message from the client (ATM)
-        cout << "Received from ATM: " << message << endl;
         cout << message.size() << endl;
         json request;
         try

@@ -394,9 +394,10 @@ void createNewAccount(const string &account, double balance, const string &cardF
     outfile.close();
 
     Value jsonMessage;
+    jsonMessage["mode"] = 'n';
     jsonMessage["account"] = account;
-    jsonMessage["initial_balance"] = balance;
     jsonMessage["password"] = password;
+    jsonMessage["initial_balance"] = balance;
     StreamWriterBuilder writer;
     string message = writeString(writer, jsonMessage);
 
@@ -423,9 +424,10 @@ void depositMoney(const string &account, double amount, const string &cardFile, 
     infile.close();
 
     Value jsonMessage;
+    jsonMessage["mode"] = 'd';
     jsonMessage["account"] = account;
-    jsonMessage["deposit"] = amount;
     jsonMessage["password"] = password;
+    jsonMessage["deposit"] = amount;
     StreamWriterBuilder writer;
     string message = writeString(writer, jsonMessage);
 
@@ -450,9 +452,10 @@ void withdrawMoney(const string &account, double amount, const string &cardFile,
     infile.close();
 
     Value jsonMessage;
+    jsonMessage["mode"] = 'w';
     jsonMessage["account"] = account;
-    jsonMessage["withdraw"] = amount;
     jsonMessage["password"] = password;
+    jsonMessage["withdraw"] = amount;
     StreamWriterBuilder writer;
     string message = writeString(writer, jsonMessage);
 
@@ -472,8 +475,8 @@ void getBalance(const string &account, const string &cardFile, const string &ip,
     infile.close();
 
     Value jsonMessage;
+    jsonMessage["mode"] = 'g';
     jsonMessage["account"] = account;
-    jsonMessage["get_balance"] = true;
     jsonMessage["password"] = password;
     StreamWriterBuilder writer;
     string message = writeString(writer, jsonMessage);

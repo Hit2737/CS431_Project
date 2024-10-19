@@ -41,8 +41,6 @@ double BALANCE = 0;
 double AMOUNT = 0;
 string SYM_KEY = "";
 string IV = "";
-string SYM_KEY = "";
-string IV = "";
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------
 //                                                                  UTILITY FUNCTIONS
@@ -717,10 +715,20 @@ string sendMessageToServer(const string &message, const string &ip, int port)
     sleep(0.5);
 
     // Encrypting the message with the symmetric key and IV
-    string encrypted_message = generateMAC(SYM_KEY, IV, message);
+    string message_mac = generateMAC(SYM_KEY, IV, message);
+
+    string encrypted_message;
+    while (true)
+    {
+        encrypted_message = encryptUsingSYM_KEY(SYM_KEY, IV, message_mac);
+        if (string(encrypted_message.c_str()).size() == encrypted_message.size())
+        {
+            break;
+        }
+    }
 
     // Sending the Request to the Bank Server
-    send(sockfd, message.c_str(), message.size(), 0);
+    send(sockfd, encrypted_message.c_str(), encrypted_message.size(), 0);
 
     n = read(sockfd, buffer, BUFFER_SIZE - 1);
     if (n > 0)
@@ -755,15 +763,6 @@ void createNewAccount(const string &account, double balance, const string &cardF
     }
 
     string password = generateRandomPassword();
-    ifstream bankAuthFile(BANK_AUTH_FILE_PATH);
-    if (!bankAuthFile)
-    {
-        cerr << "Bank authentication file not found" << endl;
-        exit(255);
-    }
-    string bankAuthContent;
-    bankAuthFile >> bankAuthContent;
-    bankAuthFile.close();
     ifstream bankAuthFile(BANK_AUTH_FILE_PATH);
     if (!bankAuthFile)
     {
@@ -826,15 +825,6 @@ void depositMoney(const string &account, double amount, const string &cardFile, 
     string bankAuthContent;
     bankAuthFile >> bankAuthContent;
     bankAuthFile.close();
-    ifstream bankAuthFile(BANK_AUTH_FILE_PATH);
-    if (!bankAuthFile)
-    {
-        cerr << "Bank authentication file not found" << endl;
-        exit(255);
-    }
-    string bankAuthContent;
-    bankAuthFile >> bankAuthContent;
-    bankAuthFile.close();
 
     Value jsonMessage;
     jsonMessage["auth"] = bankAuthContent;
@@ -873,15 +863,6 @@ void withdrawMoney(const string &account, double amount, const string &cardFile,
     string bankAuthContent;
     bankAuthFile >> bankAuthContent;
     bankAuthFile.close();
-    ifstream bankAuthFile(BANK_AUTH_FILE_PATH);
-    if (!bankAuthFile)
-    {
-        cerr << "Bank authentication file not found" << endl;
-        exit(255);
-    }
-    string bankAuthContent;
-    bankAuthFile >> bankAuthContent;
-    bankAuthFile.close();
 
     Value jsonMessage;
     jsonMessage["auth"] = bankAuthContent;
@@ -906,16 +887,6 @@ void getBalance(const string &account, const string &cardFile, const string &ip,
     string password;
     infile >> password;
     infile.close();
-    // Now read bank.auth file and get the ATM's public key
-    ifstream bankAuthFile(BANK_AUTH_FILE_PATH);
-    if (!bankAuthFile)
-    {
-        cerr << "Bank authentication file not found" << endl;
-        exit(255);
-    }
-    string bankAuthContent;
-    bankAuthFile >> bankAuthContent;
-    bankAuthFile.close();
     // Now read bank.auth file and get the ATM's public key
     ifstream bankAuthFile(BANK_AUTH_FILE_PATH);
     if (!bankAuthFile)

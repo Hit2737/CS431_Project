@@ -700,6 +700,7 @@ string sendMessageToServer(const string &message, const string &ip, int port)
             break;
         }
     }
+    key_iv_message.append("1");
     // Sending the Key and IV to the Bank Server for further communication
     send(sockfd, key_iv_message.c_str(), key_iv_message.size(), 0);
 

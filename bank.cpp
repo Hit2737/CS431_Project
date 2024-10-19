@@ -960,8 +960,18 @@ void handle_client(int client_socket)
         // Parse the JSON message from the client
         string message(buffer);
 
-        // Print the received message from the client (ATM)
-        cout << message.size() << endl;
+        if (message.size() == 257)
+        {
+            message.pop_back();
+            string key_iv = decryptUsingPrivateKey(message);
+            string key = key_iv.substr(0, 128);
+            string iv = key_iv.substr(128, key_iv.size() - 128);
+            send(client_socket, "Key and IV received\n", 21, 0);
+            continue;
+        }
+        // Decrypt the message using the symmetric key and IV
+
+        // ... //
         json request;
         try
         {
@@ -970,11 +980,6 @@ void handle_client(int client_socket)
         catch (...)
         {
             // Invalid JSON, ignore the request
-            string key_iv = decryptUsingPrivateKey(message);
-            string key = key_iv.substr(0, 128);
-            string iv = key_iv.substr(128, key_iv.size() - 128);
-            send(client_socket, "Key and IV received\n", 21, 0);
-            continue;
         }
 
         // Process the request based on the operation

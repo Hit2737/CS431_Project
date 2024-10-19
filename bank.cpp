@@ -93,11 +93,6 @@ void format_correction(string &money){
         }
     }
 
-    if (ind < money.size()-3){
-        money = "";
-        return;
-    }
-
     if (ind==-1){
         money.push_back('.');
         ind = money.size()-1;
@@ -117,6 +112,7 @@ void format_correction(string &money){
         else break;
     }
     
+    money = money.substr(0, ind + 3);
 }
 
 
@@ -391,9 +387,38 @@ int executeSQL(const string &sql, char** messageError){
 }
 
 
+string check_password(string name, string password){
+
+    char* messageError;
+
+
+    string sql = "SELECT PASSWORD FROM accounts WHERE NAME= \'" + name + "\';";
+    sqlite3_stmt*  stmt;
+
+    if (sqlite3_prepare_v2(DB, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        return "SQL prepare error: " + string(sqlite3_errmsg(DB)) + "\n";
+    }
+
+
+    string current_password;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        current_password = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    } else {
+        sqlite3_finalize(stmt);
+        return "AC_NOT_EXISTS";
+    }
+    sqlite3_finalize(stmt);
+
+    if (password == current_password){
+        return "";
+    }
+    else return "Wrong password";
+}
+
+
 void create_table(){
 
-    string create_table_sql =   "CREATE TABLE accounts ("
+    string create_table_sql =   "CREATE TABLE IF NOT EXISTS accounts ("
                                 "NAME       TEXT    PRIMARY KEY     NOT NULL, "
                                 "MONEY      TEXT    NOT NULL,"
                                 "PASSWORD   TEXT    NOT NULL );";
@@ -440,7 +465,7 @@ string get_balance(string name){
     char* messageError;
 
 
-    string sql = "SELECT MONEY FROM accounts WHERE NAME= '" + name + "';";
+    string sql = "SELECT MONEY FROM accounts WHERE NAME= \'" + name + "\';";
     sqlite3_stmt*  stmt;
 
     if (sqlite3_prepare_v2(DB, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -611,19 +636,30 @@ void handle_client(int client_socket) {
 
         // validate account and password
 
-        if (check_input_for_sql_injection(name)){
+        if (!check_input_for_sql_injection(name)){
             string response_message = "Invalid input for Name\n";
             send(client_socket, response_message.c_str(), response_message.length(), 0);
             cout<<"Invalid input for Name :- " + name + "\n";
             continue;
         }
 
-        if (check_input_for_sql_injection(password)){
+        if (!check_input_for_sql_injection(password)){
             string response_message = "Invalid input for Password\n";
             send(client_socket, response_message.c_str(), response_message.length(), 0);
             cout<<"Invalid input for Password :- " + password + "\n";
             continue;
         }
+
+        if (mode != "n"){
+            string pass_check = check_password(name, password);
+            if (pass_check != ""){
+                string response_message = "Error Occured while checking the password :- " + pass_check + "\n";
+                send(client_socket, response_message.c_str(), response_message.length(), 0);
+                cout<<"Error Occured :- " + pass_check + " while checking the password for the account :- " + name + "\n";
+                continue;
+            }
+        }
+
 
         if (mode=="n"){
             // new account
@@ -646,17 +682,20 @@ void handle_client(int client_socket) {
                                     "Account Name :- " + name +
                                     "\n Account Balance :- " + money + "\n";
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
-                cout<<"Account with name :- " + name + "and Balance :- " + money + "is ceated successfully.\n"; 
+                cout<<"Account with name :- " + name + " and Balance :- " + money + " is ceated successfully.\n"; 
                 continue;
             }
+
+            response_message = "Error Occured :- " + error + "\n";
+            cout<<"Error occured :- " + error + " for creating the account " + name + " and balance " + money + "\n";
+            send(client_socket, response_message.c_str(), response_message.length(), 0); 
 
         }
         else if(mode == "d"){
             // deposit
 
-            string delta = to_string(request["ammount"]);
+            string delta = to_string(request["amount"]);
             string response_message;
-
 
             format_correction(delta);
             if (delta == ""){
@@ -685,7 +724,7 @@ void handle_client(int client_socket) {
         else if(mode == "w"){
             // withdraw
 
-            string delta = to_string(request["ammount"]);
+            string delta = to_string(request["amount"]);
             string response_message;
 
 
@@ -708,8 +747,8 @@ void handle_client(int client_socket) {
 
             string changed_balance = get_balance(name);
 
-            response_message = "Money deposited succesfully and your updated balance is " + changed_balance + "\n";
-            cout<<"Money deposited from the account "+ name + " and the updated balance is " + changed_balance + "\n";
+            response_message = "Money withdrawed succesfully and your updated balance is " + changed_balance + "\n";
+            cout<<"Money withdrawed from the account "+ name + " and the updated balance is " + changed_balance + "\n";
             send(client_socket, response_message.c_str(), response_message.length(), 0);
 
         }
@@ -733,6 +772,7 @@ void handle_client(int client_socket) {
         else{
             close(client_socket);
         }
+
         
     }
 
@@ -804,6 +844,7 @@ int main(int argc, char *argv[]) {
     if (parse_arguments(argc, argv)){
         return 1;       
     }
+
 
     // setting the default values if not provided
     if (port==-1){

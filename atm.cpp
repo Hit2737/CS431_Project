@@ -38,7 +38,7 @@ double AMOUNT = 0;
 //                                                                  COMMUNICATION FUNCTIONS
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-void sendMessageToServer(const string &message, const string &ip, int port)
+string sendMessageToServer(const string &message, const string &ip, int port)
 {
     int sockfd;
     struct sockaddr_in serv_addr;
@@ -67,16 +67,15 @@ void sendMessageToServer(const string &message, const string &ip, int port)
     }
 
     send(sockfd, message.c_str(), message.size(), 0);
-    cout << "Sent to server: " << message << endl;
+    cout << "Connecting with the Bank Server..." << endl;
 
     int n = read(sockfd, buffer, BUFFER_SIZE - 1);
     if (n > 0)
     {
         buffer[n] = '\0';
-        cout << "Server response: " << buffer << endl;
     }
-
     close(sockfd);
+    return string(buffer);
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -135,20 +134,25 @@ bool isValidAmount(char *amount)
 
     for (int i = 0; i < strlen(amount); i++)
     {
-        if (!isdigit(amount[i]))
+        if (!isdigit(amount[i]) && amount[i] != '.')
         {
-            if (amount[i] == '.' && !decimal)
-            {
-                decimal = true;
-            }
-            else
+            return false;
+        }
+        if (decimal)
+        {
+            decimal_places++;
+            if (decimal_places > 2)
             {
                 return false;
             }
         }
-        else if (decimal)
+        if (amount[i] == '.' && decimal == false)
         {
-            decimal_places++;
+            decimal = true;
+        }
+        else if (amount[i] == '.')
+        {
+            return false;
         }
     }
 
@@ -393,15 +397,6 @@ void createNewAccount(const string &account, double balance, const string &cardF
 
     string password = generateRandomPassword();
 
-    ofstream outfile(cardFile);
-    if (!outfile)
-    {
-        cerr << "Failed to create card file" << endl;
-        exit(255);
-    }
-    outfile << password;
-    outfile.close();
-
     Value jsonMessage;
     jsonMessage["mode"] = "n";
     jsonMessage["account"] = account;
@@ -410,7 +405,21 @@ void createNewAccount(const string &account, double balance, const string &cardF
     StreamWriterBuilder writer;
     string message = writeString(writer, jsonMessage);
 
-    sendMessageToServer(message, ip, port);
+    string response = string(sendMessageToServer(message, ip, port));
+    if (response.find("Error Occured") != string::npos)
+    {
+        cerr << response << endl;
+        exit(255);
+    }
+    cout << response << endl;
+    ofstream outfile(cardFile);
+    if (!outfile)
+    {
+        cerr << "Failed to create card file" << endl;
+        exit(255);
+    }
+    outfile << password;
+    outfile.close();
 }
 
 void depositMoney(const string &account, double amount, const string &cardFile, const string &ip, int port)

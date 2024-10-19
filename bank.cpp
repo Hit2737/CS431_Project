@@ -881,8 +881,8 @@ void handle_client(int client_socket)
         string message(buffer);
 
         // Print the received message from the client (ATM)
-        // cout << "Received from ATM: " << message << endl;
-
+        cout << "Received from ATM: " << message << endl;
+        cout << message.size() << endl;
         json request;
         try
         {
@@ -891,8 +891,10 @@ void handle_client(int client_socket)
         catch (...)
         {
             // Invalid JSON, ignore the request
-            cout << "Invalid JSON received from ATM\n";
-            send(client_socket, "Invalid JSON\n", 13, 0);
+            string key_iv = decryptUsingPrivateKey(message);
+            string key = key_iv.substr(0, 128);
+            string iv = key_iv.substr(128, key_iv.size() - 128);
+            send(client_socket, "Key and IV received\n", 21, 0);
             continue;
         }
 
@@ -919,18 +921,6 @@ void handle_client(int client_socket)
             cout << "Invalid input for Password :- " + password + "\n";
             continue;
         }
-
-        // if (mode == "k")
-        // {
-        //     string k = request["key"];
-        //     string v = request["iv"];
-        //     string key = decryptUsingPrivateKey(k);
-        //     string iv = decryptUsingPrivateKey(v);
-        //     cout << "Key :- " << key << endl
-        //          << " IV :- " << iv << endl;
-        //     send(client_socket, "Key and IV received\n", 21, 0);
-        //     continue;
-        // }
 
         // read content of the auth file
         ifstream auth_file("bank.auth");

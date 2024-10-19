@@ -1,6 +1,6 @@
-/*******************************************************************************************************************************************************************
- *                                                                 CNS-431: Project "ATM"                                                                          *
- *******************************************************************************************************************************************************************/
+/************************************************************************************************************************************************************
+ *                                                                 CNS-431: Project "ATM"                                                                   *       *
+ ************************************************************************************************************************************************************/
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------
 //                                                                  IMPORT LIBRARIES
@@ -10,6 +10,11 @@
 #include <sstream>
 #include <cstring>
 #include <unistd.h>
+#include <openssl/pem.h>
+#include <openssl/evp.h>
+#include <openssl/rand.h>
+#include <iomanip>
+#include <sstream>
 #include <arpa/inet.h>
 #include <jsoncpp/json/json.h>
 #include <random>
@@ -23,60 +28,18 @@ using namespace Json;
 //                                                                  GLOBAL VARIABLES
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-string BANK_AUTH_FILE_PATH = "./auth.txt";
+string BANK_AUTH_FILE_PATH = "./bank.auth";
 string ATM_AUTH_CONTENT = "";
 string IP_ADDRESS = "127.0.0.1";
 int PORT = 3000;
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 4096
 string USER_CARD = "";
 string ACCOUNT = "";
 char MODE = '-';
 double BALANCE = 0;
 double AMOUNT = 0;
-
-//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
-//                                                                  COMMUNICATION FUNCTIONS
-//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-string sendMessageToServer(const string &message, const string &ip, int port)
-{
-    int sockfd;
-    struct sockaddr_in serv_addr;
-    char buffer[BUFFER_SIZE];
-
-    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-    {
-        perror("Socket creation failed");
-        exit(255);
-    }
-
-    memset(&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(port);
-
-    if (inet_pton(AF_INET, ip.c_str(), &serv_addr.sin_addr) <= 0)
-    {
-        cerr << "Invalid IP address" << endl;
-        exit(255);
-    }
-
-    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
-    {
-        perror("Connection to the bank server failed");
-        exit(255);
-    }
-
-    send(sockfd, message.c_str(), message.size(), 0);
-    cout << "Connecting with the Bank Server..." << endl;
-
-    int n = read(sockfd, buffer, BUFFER_SIZE - 1);
-    if (n > 0)
-    {
-        buffer[n] = '\0';
-    }
-    close(sockfd);
-    return string(buffer);
-}
+string SYM_KEY = "";
+string IV = "";
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------
 //                                                                  UTILITY FUNCTIONS
@@ -362,7 +325,23 @@ void parseArguments(int argc, char *argv[], string &error)
 }
 
 // ................................  GENERATE RANDOM PASSWORD  ................................
+void generateKeyAndIV(string &key, string &iv)
+{
+    const string characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    random_device rd;
+    mt19937 generator(rd());
+    uniform_int_distribution<> distribution(0, characters.size() - 1);
 
+    for (int i = 0; i < 128; i++)
+    {
+        key += characters[distribution(generator)];
+    }
+    for (int i = 0; i < 16; i++)
+    {
+        iv += characters[distribution(generator)];
+    }
+    return;
+}
 string generateRandomPassword(int length = 32)
 {
     const string characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789~!@#$%^&*()_+-=:;,.<>/?";
@@ -378,6 +357,287 @@ string generateRandomPassword(int length = 32)
     return password;
 }
 
+void generateRSAKeyPairs()
+{
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
+    EVP_PKEY *pkey = NULL;
+
+    if (!ctx)
+    {
+        cerr << "Error initializing context for RSA key generation\n";
+        return;
+    }
+
+    if (EVP_PKEY_keygen_init(ctx) <= 0)
+    {
+        cerr << "Error initializing key generation\n";
+        EVP_PKEY_CTX_free(ctx);
+        return;
+    }
+
+    if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 2048) <= 0)
+    {
+        cerr << "Error setting RSA key size\n";
+        EVP_PKEY_CTX_free(ctx);
+        return;
+    }
+
+    if (EVP_PKEY_keygen(ctx, &pkey) <= 0)
+    {
+        cerr << "Error generating RSA key pair\n";
+        EVP_PKEY_CTX_free(ctx);
+        return;
+    }
+
+    FILE *privateKeyFile = fopen("private_key.pem", "wb");
+    FILE *publicKeyFile = fopen("public_key.pem", "wb");
+
+    if (!privateKeyFile || !publicKeyFile)
+    {
+        cerr << "Error opening key files\n";
+        return;
+    }
+
+    if (!PEM_write_PrivateKey(privateKeyFile, pkey, NULL, NULL, 0, NULL, NULL))
+    {
+        cerr << "Error writing private key\n";
+        fclose(privateKeyFile);
+        fclose(publicKeyFile);
+        return;
+    }
+
+    if (!PEM_write_PUBKEY(publicKeyFile, pkey))
+    {
+        cerr << "Error writing public key\n";
+        fclose(privateKeyFile);
+        fclose(publicKeyFile);
+        return;
+    }
+
+    fclose(privateKeyFile);
+    fclose(publicKeyFile);
+    EVP_PKEY_free(pkey);
+    EVP_PKEY_CTX_free(ctx);
+}
+
+// ................................  ENCRYPTION FUNCTIONS  ................................
+
+string encryptUsingPublicKey(string &message)
+{
+    FILE *publicKeyFile = fopen("public_key.pem", "rb");
+    if (!publicKeyFile)
+    {
+        cerr << "Error opening public key file\n";
+        return "";
+    }
+
+    EVP_PKEY *publicKey = PEM_read_PUBKEY(publicKeyFile, NULL, NULL, NULL);
+    fclose(publicKeyFile);
+
+    if (!publicKey)
+    {
+        cerr << "Error reading public key\n";
+        return "";
+    }
+
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(publicKey, NULL);
+    if (!ctx)
+    {
+        EVP_PKEY_free(publicKey);
+        cerr << "Error creating context for encryption\n";
+        return "";
+    }
+
+    if (EVP_PKEY_encrypt_init(ctx) <= 0)
+    {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(publicKey);
+        cerr << "Error initializing encryption\n";
+        return "";
+    }
+
+    if (EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_PADDING) <= 0)
+    {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(publicKey);
+        cerr << "Error setting padding\n";
+        return "";
+    }
+
+    size_t outlen;
+    if (EVP_PKEY_encrypt(ctx, NULL, &outlen, (const unsigned char *)message.c_str(), message.length()) <= 0)
+    {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(publicKey);
+        cerr << "Error determining buffer size for encryption\n";
+        return "";
+    }
+
+    vector<unsigned char> outbuf(outlen);
+
+    if (EVP_PKEY_encrypt(ctx, outbuf.data(), &outlen, (const unsigned char *)message.c_str(), message.length()) <= 0)
+    {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(publicKey);
+        cerr << "Error encrypting data\n";
+        return "";
+    }
+
+    EVP_PKEY_CTX_free(ctx);
+    EVP_PKEY_free(publicKey);
+
+    string final_output;
+    for (auto c : outbuf)
+    {
+        final_output.push_back(c);
+    }
+
+    return final_output;
+}
+
+string decryptUsingPrivateKey(string &message)
+{
+    FILE *privateKeyFile = fopen("private_key.pem", "rb");
+    if (!privateKeyFile)
+    {
+        cerr << "Error opening private key file\n";
+        return "";
+    }
+
+    EVP_PKEY *privateKey = PEM_read_PrivateKey(privateKeyFile, NULL, NULL, NULL);
+    fclose(privateKeyFile);
+
+    if (!privateKey)
+    {
+        cerr << "Error reading private key\n";
+        return "";
+    }
+
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(privateKey, NULL);
+    if (!ctx)
+    {
+        EVP_PKEY_free(privateKey);
+        cerr << "Error creating context for decryption\n";
+        return "";
+    }
+
+    if (EVP_PKEY_decrypt_init(ctx) <= 0)
+    {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(privateKey);
+        cerr << "Error initializing decryption\n";
+        return "";
+    }
+
+    size_t outlen;
+    if (EVP_PKEY_decrypt(ctx, NULL, &outlen, (const unsigned char *)message.c_str(), message.length()) <= 0)
+    {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(privateKey);
+        cerr << "Error determining buffer size for decryption\n";
+        return "";
+    }
+
+    vector<unsigned char> outbuf(outlen);
+
+    if (EVP_PKEY_decrypt(ctx, outbuf.data(), &outlen, (const unsigned char *)message.c_str(), message.length()) <= 0)
+    {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(privateKey);
+        cerr << "Error decrypting data\n";
+        return "";
+    }
+
+    EVP_PKEY_CTX_free(ctx);
+    EVP_PKEY_free(privateKey);
+
+    return string(outbuf.begin(), outbuf.end());
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+//                                                                  COMMUNICATION FUNCTIONS
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+// Function send a message to the bank server
+string sendMessageToServer(const string &message, const string &ip, int port)
+{
+    int sockfd;
+    struct sockaddr_in serv_addr;
+    char buffer[BUFFER_SIZE];
+
+    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        perror("Socket creation failed");
+        exit(255);
+    }
+
+    memset(&serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(port);
+
+    if (inet_pton(AF_INET, ip.c_str(), &serv_addr.sin_addr) <= 0)
+    {
+        cerr << "Invalid IP address" << endl;
+        exit(255);
+    }
+
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+    {
+        perror("Connection to the bank server failed");
+        exit(255);
+    }
+    // Clear buffer before receiving the server's response
+    memset(buffer, 0, BUFFER_SIZE);
+    generateKeyAndIV(SYM_KEY, IV);
+    // Key and IV are generated elsewhere and assumed to be available.
+    cout << "Key :- " << SYM_KEY << endl
+         << " IV :- " << IV << endl;
+    string key_iv = SYM_KEY + IV;
+    string key_iv_message;
+    while (true)
+    {
+        key_iv_message = encryptUsingPublicKey(key_iv);
+        if (string(key_iv_message.c_str()).size() == 256)
+        {
+            break;
+        }
+    }
+
+    send(sockfd, key_iv_message.c_str(), key_iv_message.size(), 0);
+    cout << key_iv_message << endl;
+
+    // Send the encrypted message to the server
+    cout << "Connecting with the Bank Server..." << endl;
+    int n = read(sockfd, buffer, BUFFER_SIZE - 1);
+    if (n > 0)
+    {
+        buffer[n] = '\0'; // Null-terminate the buffer again
+        cout << "Response from the Bank Server: " << string(buffer) << endl;
+    }
+    else
+    {
+        cerr << "Error: No second response received from the server." << endl;
+    }
+    sleep(1);
+    // Send the original message (unencrypted) to the server after receiving its response
+    send(sockfd, message.c_str(), message.size(), 0);
+    cout << "Message sent to the Bank Server: " << message << endl;
+
+    // Receive the second response from the server
+    n = read(sockfd, buffer, BUFFER_SIZE - 1);
+    if (n > 0)
+    {
+        buffer[n] = '\0'; // Null-terminate the buffer again
+        cout << "Response from the Bank Server: " << string(buffer) << endl;
+    }
+    else
+    {
+        cerr << "Error: No second response received from the server." << endl;
+    }
+
+    close(sockfd);
+    return string(buffer);
+}
 // ................................  ATM FUNCTIONALITIES ................................
 
 void createNewAccount(const string &account, double balance, const string &cardFile, const string &ip, int port)
@@ -396,8 +656,18 @@ void createNewAccount(const string &account, double balance, const string &cardF
     }
 
     string password = generateRandomPassword();
+    ifstream bankAuthFile(BANK_AUTH_FILE_PATH);
+    if (!bankAuthFile)
+    {
+        cerr << "Bank authentication file not found" << endl;
+        exit(255);
+    }
+    string bankAuthContent;
+    bankAuthFile >> bankAuthContent;
+    bankAuthFile.close();
 
     Value jsonMessage;
+    jsonMessage["auth"] = bankAuthContent;
     jsonMessage["mode"] = "n";
     jsonMessage["account"] = account;
     jsonMessage["password"] = password;
@@ -408,7 +678,6 @@ void createNewAccount(const string &account, double balance, const string &cardF
     string response = string(sendMessageToServer(message, ip, port));
     if (response.find("Error Occured") != string::npos)
     {
-        cerr << response << endl;
         exit(255);
     }
     cout << response << endl;
@@ -440,8 +709,18 @@ void depositMoney(const string &account, double amount, const string &cardFile, 
     string password;
     infile >> password;
     infile.close();
+    ifstream bankAuthFile(BANK_AUTH_FILE_PATH);
+    if (!bankAuthFile)
+    {
+        cerr << "Bank authentication file not found" << endl;
+        exit(255);
+    }
+    string bankAuthContent;
+    bankAuthFile >> bankAuthContent;
+    bankAuthFile.close();
 
     Value jsonMessage;
+    jsonMessage["auth"] = bankAuthContent;
     jsonMessage["mode"] = "d";
     jsonMessage["account"] = account;
     jsonMessage["password"] = password;
@@ -468,8 +747,18 @@ void withdrawMoney(const string &account, double amount, const string &cardFile,
     string password;
     infile >> password;
     infile.close();
+    ifstream bankAuthFile(BANK_AUTH_FILE_PATH);
+    if (!bankAuthFile)
+    {
+        cerr << "Bank authentication file not found" << endl;
+        exit(255);
+    }
+    string bankAuthContent;
+    bankAuthFile >> bankAuthContent;
+    bankAuthFile.close();
 
     Value jsonMessage;
+    jsonMessage["auth"] = bankAuthContent;
     jsonMessage["mode"] = "w";
     jsonMessage["account"] = account;
     jsonMessage["password"] = password;
@@ -491,8 +780,19 @@ void getBalance(const string &account, const string &cardFile, const string &ip,
     string password;
     infile >> password;
     infile.close();
+    // Now read bank.auth file and get the ATM's public key
+    ifstream bankAuthFile(BANK_AUTH_FILE_PATH);
+    if (!bankAuthFile)
+    {
+        cerr << "Bank authentication file not found" << endl;
+        exit(255);
+    }
+    string bankAuthContent;
+    bankAuthFile >> bankAuthContent;
+    bankAuthFile.close();
 
     Value jsonMessage;
+    jsonMessage["auth"] = bankAuthContent;
     jsonMessage["mode"] = "g";
     jsonMessage["account"] = account;
     jsonMessage["password"] = password;
@@ -508,7 +808,6 @@ void getBalance(const string &account, const string &cardFile, const string &ip,
 
 int main(int argc, char *argv[])
 {
-
     // ------------------- Parse the command line arguments --------------------------
     string error;
 

@@ -40,6 +40,8 @@ double BALANCE = 0;
 double AMOUNT = 0;
 string SYM_KEY = "";
 string IV = "";
+string SYM_KEY = "";
+string IV = "";
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------
 //                                                                  UTILITY FUNCTIONS
@@ -665,6 +667,15 @@ void createNewAccount(const string &account, double balance, const string &cardF
     string bankAuthContent;
     bankAuthFile >> bankAuthContent;
     bankAuthFile.close();
+    ifstream bankAuthFile(BANK_AUTH_FILE_PATH);
+    if (!bankAuthFile)
+    {
+        cerr << "Bank authentication file not found" << endl;
+        exit(255);
+    }
+    string bankAuthContent;
+    bankAuthFile >> bankAuthContent;
+    bankAuthFile.close();
 
     Value jsonMessage;
     jsonMessage["auth"] = bankAuthContent;
@@ -718,6 +729,15 @@ void depositMoney(const string &account, double amount, const string &cardFile, 
     string bankAuthContent;
     bankAuthFile >> bankAuthContent;
     bankAuthFile.close();
+    ifstream bankAuthFile(BANK_AUTH_FILE_PATH);
+    if (!bankAuthFile)
+    {
+        cerr << "Bank authentication file not found" << endl;
+        exit(255);
+    }
+    string bankAuthContent;
+    bankAuthFile >> bankAuthContent;
+    bankAuthFile.close();
 
     Value jsonMessage;
     jsonMessage["auth"] = bankAuthContent;
@@ -756,6 +776,15 @@ void withdrawMoney(const string &account, double amount, const string &cardFile,
     string bankAuthContent;
     bankAuthFile >> bankAuthContent;
     bankAuthFile.close();
+    ifstream bankAuthFile(BANK_AUTH_FILE_PATH);
+    if (!bankAuthFile)
+    {
+        cerr << "Bank authentication file not found" << endl;
+        exit(255);
+    }
+    string bankAuthContent;
+    bankAuthFile >> bankAuthContent;
+    bankAuthFile.close();
 
     Value jsonMessage;
     jsonMessage["auth"] = bankAuthContent;
@@ -780,6 +809,16 @@ void getBalance(const string &account, const string &cardFile, const string &ip,
     string password;
     infile >> password;
     infile.close();
+    // Now read bank.auth file and get the ATM's public key
+    ifstream bankAuthFile(BANK_AUTH_FILE_PATH);
+    if (!bankAuthFile)
+    {
+        cerr << "Bank authentication file not found" << endl;
+        exit(255);
+    }
+    string bankAuthContent;
+    bankAuthFile >> bankAuthContent;
+    bankAuthFile.close();
     // Now read bank.auth file and get the ATM's public key
     ifstream bankAuthFile(BANK_AUTH_FILE_PATH);
     if (!bankAuthFile)

@@ -13,6 +13,8 @@
 #include <openssl/pem.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
+#include <openssl/aes.h>
+#include <openssl/err.h>
 #include <openssl/rand.h>
 #include <iomanip>
 #include <sstream>
@@ -37,8 +39,8 @@ int PORT = 3000;
 string USER_CARD = "";
 string ACCOUNT = "";
 char MODE = '-';
-double BALANCE = 0;
-double AMOUNT = 0;
+string BALANCE = "";
+string AMOUNT = "";
 string SYM_KEY = "";
 string IV = "";
 
@@ -120,7 +122,7 @@ bool isValidAmount(char *amount)
         }
     }
 
-    double amount_num = stod(amount);
+    double amount_num = stod(string(amount));
     return amount_num >= 0.00 && amount_num <= 4294967295.99;
 }
 
@@ -269,7 +271,7 @@ void parseArguments(int argc, char *argv[], string &error)
             }
             if (isValidAmount(optarg))
             {
-                BALANCE = stod(optarg);
+                BALANCE = optarg;
             }
             else
             {
@@ -285,7 +287,7 @@ void parseArguments(int argc, char *argv[], string &error)
             }
             if (isValidAmount(optarg))
             {
-                AMOUNT = stod(optarg);
+                AMOUNT = optarg;
             }
             else
             {
@@ -301,7 +303,7 @@ void parseArguments(int argc, char *argv[], string &error)
             }
             if (isValidAmount(optarg))
             {
-                AMOUNT = stod(optarg);
+                AMOUNT = optarg;
             }
             else
             {
@@ -422,7 +424,7 @@ void generateRSAKeyPairs()
     EVP_PKEY_CTX_free(ctx);
 }
 
-string generateMAC(const string &key, const string &iv, const string &message, size_t mac_length = 32)
+string generateMAC(const string &key, const string &iv, const string &message)
 {
     string data = iv + message;
 
@@ -431,7 +433,7 @@ string generateMAC(const string &key, const string &iv, const string &message, s
 
     HMAC(EVP_sha256(), key.data(), key.size(), reinterpret_cast<const unsigned char *>(data.data()), data.size(), mac, &mac_size);
 
-    mac_size = min(mac_size, static_cast<unsigned int>(mac_length));
+    mac_size = min(mac_size, static_cast<unsigned int>(32));
     string message_with_mac = message + string(reinterpret_cast<const char *>(mac), mac_size);
 
     return message_with_mac;
@@ -570,85 +572,108 @@ string decryptUsingPrivateKey(string &message)
 
     return string(outbuf.begin(), outbuf.end());
 }
-
-string encryptUsingSYM_KEY(string &key, string &iv, string &message)
+// Convert byte array to hex string
+string to_hex_string(const vector<unsigned char> &data)
 {
-    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-    if (!ctx)
+    ostringstream oss;
+    for (auto byte : data)
     {
-        cerr << "Error creating context for symmetric encryption\n";
-        return "";
+        oss << hex << setw(2) << setfill('0') << static_cast<int>(byte);
     }
-
-    if (EVP_EncryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, reinterpret_cast<const unsigned char *>(key.c_str()), reinterpret_cast<const unsigned char *>(iv.c_str())) <= 0)
-    {
-        EVP_CIPHER_CTX_free(ctx);
-        cerr << "Error initializing symmetric encryption\n";
-        return "";
-    }
-
-    int outlen = message.length() + EVP_CIPHER_block_size(EVP_aes_128_cbc());
-    vector<unsigned char> outbuf(outlen);
-
-    if (EVP_EncryptUpdate(ctx, outbuf.data(), &outlen, reinterpret_cast<const unsigned char *>(message.c_str()), message.length()) <= 0)
-    {
-        EVP_CIPHER_CTX_free(ctx);
-        cerr << "Error encrypting data\n";
-        return "";
-    }
-
-    int finallen = outlen;
-    if (EVP_EncryptFinal_ex(ctx, outbuf.data() + outlen, &outlen) <= 0)
-    {
-        EVP_CIPHER_CTX_free(ctx);
-        cerr << "Error finalizing encryption\n";
-        return "";
-    }
-
-    finallen += outlen;
-    EVP_CIPHER_CTX_free(ctx);
-
-    return string(outbuf.begin(), outbuf.begin() + finallen);
+    return oss.str();
 }
 
-string decryptUsingSYM_KEY(string &key, string &iv, string &message)
+// Convert hex string to byte array
+vector<unsigned char> from_hex_string(const string &hex)
 {
-    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-    if (!ctx)
+    vector<unsigned char> bytes;
+    for (size_t i = 0; i < hex.length(); i += 2)
     {
-        cerr << "Error creating context for symmetric decryption\n";
-        return "";
+        string byteString = hex.substr(i, 2);
+        unsigned char byte = static_cast<unsigned char>(stoi(byteString, nullptr, 16));
+        bytes.push_back(byte);
     }
+    return bytes;
+}
 
-    if (EVP_DecryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, reinterpret_cast<const unsigned char *>(key.c_str()), reinterpret_cast<const unsigned char *>(iv.c_str())) <= 0)
-    {
-        EVP_CIPHER_CTX_free(ctx);
-        cerr << "Error initializing symmetric decryption\n";
-        return "";
-    }
+// Handle OpenSSL errors
+void handleErrors()
+{
+    ERR_print_errors_fp(stderr);
+    abort();
+}
 
-    int outlen = message.length() + EVP_CIPHER_block_size(EVP_aes_128_cbc());
-    vector<unsigned char> outbuf(outlen);
+// Encryption function
+string encryptUsingSYM_KEY(const string &key, const string &iv, const string &plaintext)
+{
+    EVP_CIPHER_CTX *ctx;
 
-    if (EVP_DecryptUpdate(ctx, outbuf.data(), &outlen, reinterpret_cast<const unsigned char *>(message.c_str()), message.length()) <= 0)
-    {
-        EVP_CIPHER_CTX_free(ctx);
-        cerr << "Error decrypting data\n";
-        return "";
-    }
+    int len;
+    int ciphertext_len;
+    vector<unsigned char> ciphertext(plaintext.size() + AES_BLOCK_SIZE);
 
-    size_t finallen = outlen;
-    if (EVP_DecryptFinal_ex(ctx, outbuf.data() + outlen, &outlen) <= 0)
-    {
-        EVP_CIPHER_CTX_free(ctx);
-        cerr << "Error finalizing decryption\n";
-        return "";
-    }
+    // Create and initialize the context
+    if (!(ctx = EVP_CIPHER_CTX_new()))
+        handleErrors();
 
-    finallen += outlen;
+    // Initialize the encryption operation with 256-bit AES in CBC mode
+    if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, (unsigned char *)key.data(), (unsigned char *)iv.data()))
+        handleErrors();
+
+    // Provide the plaintext to encrypt and obtain the encrypted output
+    if (1 != EVP_EncryptUpdate(ctx, ciphertext.data(), &len, (unsigned char *)plaintext.data(), plaintext.size()))
+        handleErrors();
+    ciphertext_len = len;
+
+    // Finalize the encryption (handle padding)
+    if (1 != EVP_EncryptFinal_ex(ctx, ciphertext.data() + len, &len))
+        handleErrors();
+    ciphertext_len += len;
+
+    // Clean up
     EVP_CIPHER_CTX_free(ctx);
 
-    return string(outbuf.begin(), outbuf.begin() + finallen);
+    // Return ciphertext as hex string
+    ciphertext.resize(ciphertext_len);
+    return to_hex_string(ciphertext);
+}
+
+// Decryption function
+string decryptUsingSYM_KEY(const string &key, const string &iv, const string &ciphertext_hex)
+{
+    EVP_CIPHER_CTX *ctx;
+
+    int len;
+    int plaintext_len;
+    vector<unsigned char> plaintext(ciphertext_hex.size());
+
+    // Convert hex string back to bytes
+    vector<unsigned char> ciphertext = from_hex_string(ciphertext_hex);
+
+    // Create and initialize the context
+    if (!(ctx = EVP_CIPHER_CTX_new()))
+        handleErrors();
+
+    // Initialize the decryption operation with 256-bit AES in CBC mode
+    if (1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, (unsigned char *)key.data(), (unsigned char *)iv.data()))
+        handleErrors();
+
+    // Provide the ciphertext to decrypt and obtain the plaintext output
+    if (1 != EVP_DecryptUpdate(ctx, plaintext.data(), &len, ciphertext.data(), ciphertext.size()))
+        handleErrors();
+    plaintext_len = len;
+
+    // Finalize the decryption (handle padding)
+    if (1 != EVP_DecryptFinal_ex(ctx, plaintext.data() + len, &len))
+        handleErrors();
+    plaintext_len += len;
+
+    // Clean up
+    EVP_CIPHER_CTX_free(ctx);
+
+    // Return plaintext as string
+    plaintext.resize(plaintext_len);
+    return string(plaintext.begin(), plaintext.end());
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -685,8 +710,12 @@ string sendMessageToServer(const string &message, const string &ip, int port)
     }
 
     memset(buffer, 0, BUFFER_SIZE);
-    generateKeyAndIV(SYM_KEY, IV);
     cout << "Connecting with the Bank Server..." << endl;
+
+    generateKeyAndIV(SYM_KEY, IV);
+
+    cout << "Key: " << SYM_KEY << endl;
+    cout << "IV: " << IV << endl;
 
     string key_iv = SYM_KEY + IV;
     string key_iv_message;
@@ -714,20 +743,11 @@ string sendMessageToServer(const string &message, const string &ip, int port)
     }
     sleep(0.5);
 
-    // Encrypting the message with the symmetric key and IV
-    string message_mac = generateMAC(SYM_KEY, IV, message);
-
-    string encrypted_message;
-    while (true)
-    {
-        encrypted_message = encryptUsingSYM_KEY(SYM_KEY, IV, message_mac);
-        if (string(encrypted_message.c_str()).size() == encrypted_message.size())
-        {
-            break;
-        }
-    }
-
     // Sending the Request to the Bank Server
+    // string message_mac = generateMAC(SYM_KEY,IV,message);
+    string mess = message;
+    string encrypted_message = encryptUsingSYM_KEY(SYM_KEY, IV, mess);
+    cout << encrypted_message.size() << endl;
     send(sockfd, encrypted_message.c_str(), encrypted_message.size(), 0);
 
     n = read(sockfd, buffer, BUFFER_SIZE - 1);
@@ -747,14 +767,8 @@ string sendMessageToServer(const string &message, const string &ip, int port)
 
 // ................................  ATM FUNCTIONALITIES ................................
 
-void createNewAccount(const string &account, double balance, const string &cardFile, const string &ip, int port)
+void createNewAccount(const string &account, string &balance, const string &cardFile, const string &ip, int port)
 {
-    if (balance < 10.00)
-    {
-        cerr << "Initial balance must be at least 10.00" << endl;
-        exit(255);
-    }
-
     ifstream infile(cardFile);
     if (infile.good())
     {
@@ -798,14 +812,8 @@ void createNewAccount(const string &account, double balance, const string &cardF
     outfile.close();
 }
 
-void depositMoney(const string &account, double amount, const string &cardFile, const string &ip, int port)
+void depositMoney(const string &account, string &amount, const string &cardFile, const string &ip, int port)
 {
-    if (amount <= 0.00)
-    {
-        cerr << "Deposit amount must be greater than 0.00" << endl;
-        exit(255);
-    }
-
     ifstream infile(cardFile);
     if (!infile)
     {
@@ -838,13 +846,8 @@ void depositMoney(const string &account, double amount, const string &cardFile, 
     sendMessageToServer(message, ip, port);
 }
 
-void withdrawMoney(const string &account, double amount, const string &cardFile, const string &ip, int port)
+void withdrawMoney(const string &account, string &amount, const string &cardFile, const string &ip, int port)
 {
-    if (amount <= 0.00)
-    {
-        cerr << "Withdraw amount must be greater than 0.00" << endl;
-        exit(255);
-    }
     ifstream infile(cardFile);
     if (!infile)
     {

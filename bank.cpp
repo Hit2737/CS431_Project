@@ -41,8 +41,10 @@
 #include <jsoncpp/json/json.h>
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
+#include <openssl/aes.h>
 #include <openssl/err.h>
 #include <openssl/bn.h>
+#include <openssl/hmac.h>
 #include <openssl/evp.h>
 using namespace std;
 using namespace nlohmann;
@@ -52,7 +54,7 @@ using namespace Json;
 
 // default variables
 const long long DEFAULT_PORT = 3000;
-const long long BUFFER_SIZE = 4096;
+const long long BUFFER_SIZE = 8192;
 const string DEFAULT_AUTH_FILE = "bank.auth";
 
 // variables to be used
@@ -435,6 +437,22 @@ int parse_arguments(int argc, char *argv[])
                                         SECURITY FUNCTIONS
 
 */
+
+string generateMAC(const string &key, const string &iv, const string &message)
+{
+    string data = iv + message;
+
+    unsigned char mac[EVP_MAX_MD_SIZE];
+    unsigned int mac_size = 0;
+
+    HMAC(EVP_sha256(), key.data(), key.size(), reinterpret_cast<const unsigned char *>(data.data()), data.size(), mac, &mac_size);
+
+    mac_size = min(mac_size, static_cast<unsigned int>(32));
+    string message_with_mac = message + string(reinterpret_cast<const char *>(mac), mac_size);
+
+    return message_with_mac;
+}
+
 // Generate RSA key pair (public and private)
 
 void generateRSAKeyPairs()
@@ -628,84 +646,108 @@ string decryptUsingPrivateKey(string &message)
     return string(outbuf.begin(), outbuf.end());
 }
 
-string encryptUsingSYM_KEY(string &key, string &iv, string &message)
+// Convert byte array to hex string
+string to_hex_string(const vector<unsigned char> &data)
 {
-    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-    if (!ctx)
+    ostringstream oss;
+    for (auto byte : data)
     {
-        cerr << "Error creating context for symmetric encryption\n";
-        return "";
+        oss << hex << setw(2) << setfill('0') << static_cast<int>(byte);
     }
-
-    if (EVP_EncryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, reinterpret_cast<const unsigned char *>(key.c_str()), reinterpret_cast<const unsigned char *>(iv.c_str())) <= 0)
-    {
-        EVP_CIPHER_CTX_free(ctx);
-        cerr << "Error initializing symmetric encryption\n";
-        return "";
-    }
-
-    int outlen = message.length() + EVP_CIPHER_block_size(EVP_aes_128_cbc());
-    vector<unsigned char> outbuf(outlen);
-
-    if (EVP_EncryptUpdate(ctx, outbuf.data(), &outlen, reinterpret_cast<const unsigned char *>(message.c_str()), message.length()) <= 0)
-    {
-        EVP_CIPHER_CTX_free(ctx);
-        cerr << "Error encrypting data\n";
-        return "";
-    }
-
-    int finallen = outlen;
-    if (EVP_EncryptFinal_ex(ctx, outbuf.data() + outlen, &outlen) <= 0)
-    {
-        EVP_CIPHER_CTX_free(ctx);
-        cerr << "Error finalizing encryption\n";
-        return "";
-    }
-
-    finallen += outlen;
-    EVP_CIPHER_CTX_free(ctx);
-
-    return string(outbuf.begin(), outbuf.begin() + finallen);
+    return oss.str();
 }
 
-string decryptUsingSYM_KEY(string &key, string &iv, string &message)
+// Convert hex string to byte array
+vector<unsigned char> from_hex_string(const string &hex)
 {
-    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-    if (!ctx)
+    vector<unsigned char> bytes;
+    for (size_t i = 0; i < hex.length(); i += 2)
     {
-        cerr << "Error creating context for symmetric decryption\n";
-        return "";
+        string byteString = hex.substr(i, 2);
+        unsigned char byte = static_cast<unsigned char>(stoi(byteString, nullptr, 16));
+        bytes.push_back(byte);
     }
+    return bytes;
+}
 
-    if (EVP_DecryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, reinterpret_cast<const unsigned char *>(key.c_str()), reinterpret_cast<const unsigned char *>(iv.c_str())) <= 0)
-    {
-        EVP_CIPHER_CTX_free(ctx);
-        cerr << "Error initializing symmetric decryption\n";
-        return "";
-    }
+// Handle OpenSSL errors
+void handleErrors()
+{
+    ERR_print_errors_fp(stderr);
+    abort();
+}
 
-    int outlen = message.length() + EVP_CIPHER_block_size(EVP_aes_128_cbc());
-    vector<unsigned char> outbuf(outlen);
+// Encryption function
+string encryptUsingSYM_KEY(const string &key, const string &iv, const string &plaintext)
+{
+    EVP_CIPHER_CTX *ctx;
 
-    if (EVP_DecryptUpdate(ctx, outbuf.data(), &outlen, reinterpret_cast<const unsigned char *>(message.c_str()), message.length()) <= 0)
-    {
-        EVP_CIPHER_CTX_free(ctx);
-        cerr << "Error decrypting data\n";
-        return "";
-    }
+    int len;
+    int ciphertext_len;
+    vector<unsigned char> ciphertext(plaintext.size() + AES_BLOCK_SIZE);
 
-    size_t finallen = outlen;
-    if (EVP_DecryptFinal_ex(ctx, outbuf.data() + outlen, &outlen) <= 0)
-    {
-        EVP_CIPHER_CTX_free(ctx);
-        cerr << "Error finalizing decryption\n";
-        return "";
-    }
+    // Create and initialize the context
+    if (!(ctx = EVP_CIPHER_CTX_new()))
+        handleErrors();
 
-    finallen += outlen;
+    // Initialize the encryption operation with 256-bit AES in CBC mode
+    if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, (unsigned char *)key.data(), (unsigned char *)iv.data()))
+        handleErrors();
+
+    // Provide the plaintext to encrypt and obtain the encrypted output
+    if (1 != EVP_EncryptUpdate(ctx, ciphertext.data(), &len, (unsigned char *)plaintext.data(), plaintext.size()))
+        handleErrors();
+    ciphertext_len = len;
+
+    // Finalize the encryption (handle padding)
+    if (1 != EVP_EncryptFinal_ex(ctx, ciphertext.data() + len, &len))
+        handleErrors();
+    ciphertext_len += len;
+
+    // Clean up
     EVP_CIPHER_CTX_free(ctx);
 
-    return string(outbuf.begin(), outbuf.begin() + finallen);
+    // Return ciphertext as hex string
+    ciphertext.resize(ciphertext_len);
+    return to_hex_string(ciphertext);
+}
+
+// Decryption function
+string decryptUsingSYM_KEY(const string &key, const string &iv, const string &ciphertext_hex)
+{
+    EVP_CIPHER_CTX *ctx;
+
+    int len;
+    int plaintext_len;
+    vector<unsigned char> plaintext(ciphertext_hex.size());
+
+    // Convert hex string back to bytes
+    vector<unsigned char> ciphertext = from_hex_string(ciphertext_hex);
+
+    // Create and initialize the context
+    if (!(ctx = EVP_CIPHER_CTX_new()))
+        handleErrors();
+
+    // Initialize the decryption operation with 256-bit AES in CBC mode
+    if (1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, (unsigned char *)key.data(), (unsigned char *)iv.data()))
+        handleErrors();
+
+    // Provide the ciphertext to decrypt and obtain the plaintext output
+    if (1 != EVP_DecryptUpdate(ctx, plaintext.data(), &len, ciphertext.data(), ciphertext.size()))
+        handleErrors();
+    plaintext_len = len;
+
+    // Finalize the decryption (handle padding)
+    if (1 != EVP_DecryptFinal_ex(ctx, plaintext.data() + len, &len))
+        handleErrors();
+    plaintext_len += len;
+
+    // Clean up
+    EVP_CIPHER_CTX_free(ctx);
+
+    // Return plaintext as string
+    plaintext.resize(plaintext_len);
+    return string(plaintext.begin(), plaintext.end());
 }
 
 /*
@@ -960,21 +1002,26 @@ void handle_client(int client_socket)
 
         // Parse the JSON message from the client
         string enc_message(buffer);
-        string message;
         if (enc_message.size() == 257)
         {
             enc_message.pop_back();
             string key_iv = decryptUsingPrivateKey(enc_message);
             key = key_iv.substr(0, 128);
             iv = key_iv.substr(128, key_iv.size() - 128);
+            cout << "Key: " << key << endl;
+            cout << "IV: " << iv << endl;
             send(client_socket, "Key and IV received\n", 21, 0);
             continue;
         }
-        // Decrypt the message using the symmetric key and IV
-        else{
-            message = decryptUsingSYM_KEY(key, iv, enc_message);
+        if (key == "" || iv == "")
+        {
+            send(client_socket, "Key and IV not received\n", 25, 0);
+            continue;
         }
 
+        // Decrypt the message using the symmetric key and IV
+        string message = decryptUsingSYM_KEY(key, iv, enc_message);
+        cout << "Message:" << message << endl;
         json request;
         try
         {
@@ -983,6 +1030,7 @@ void handle_client(int client_socket)
         catch (...)
         {
             // Invalid JSON, ignore the request
+            send(client_socket, "Invalid JSON\n", 13, 0);
         }
 
         // Process the request based on the operation
@@ -998,6 +1046,8 @@ void handle_client(int client_socket)
             string response_message = "Invalid input for Name\n";
             send(client_socket, response_message.c_str(), response_message.length(), 0);
             cout << "Invalid input for Name :- " + name + "\n";
+            key = "";
+            iv = "";
             continue;
         }
 
@@ -1006,6 +1056,8 @@ void handle_client(int client_socket)
             string response_message = "Invalid input for Password\n";
             send(client_socket, response_message.c_str(), response_message.length(), 0);
             cout << "Invalid input for Password :- " + password + "\n";
+            key = "";
+            iv = "";
             continue;
         }
 
@@ -1022,6 +1074,8 @@ void handle_client(int client_socket)
             string response_message = "Error reading auth file\n";
             send(client_socket, response_message.c_str(), response_message.length(), 0);
             cout << "Error reading auth file\n";
+            key = "";
+            iv = "";
             continue;
         }
 
@@ -1034,6 +1088,8 @@ void handle_client(int client_socket)
             string response_message = "Authentication failed\n";
             send(client_socket, response_message.c_str(), response_message.length(), 0);
             cout << "Authentication failed\n";
+            key = "";
+            iv = "";
             continue;
         }
 
@@ -1045,6 +1101,8 @@ void handle_client(int client_socket)
                 string response_message = "Error Occured while checking the password :- " + pass_check + "\n";
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
                 cout << "Error Occured :- " + pass_check + " while checking the password for the account :- " + name + "\n";
+                key = "";
+                iv = "";
                 continue;
             }
         }
@@ -1052,7 +1110,7 @@ void handle_client(int client_socket)
         if (mode == "n")
         {
             // new account
-            string money = to_string(request["initial_balance"]);
+            string money = request["initial_balance"];
             string response_message;
 
             format_correction(money);
@@ -1061,6 +1119,8 @@ void handle_client(int client_socket)
                 response_message = "Invalid input for money\n";
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
                 cout << "Invalid input for Balance :- " + money + "\n";
+                key = "";
+                iv = "";
                 continue;
             }
 
@@ -1075,18 +1135,22 @@ void handle_client(int client_socket)
                                    "\n Account Balance :- " + money + "\n";
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
                 cout << "Account with name :- " + name + " and Balance :- " + money + " is created successfully.\n";
+                key = "";
+                iv = "";
                 continue;
             }
 
             response_message = "Error Occured :- " + error + "\n";
             cout << "Error occured :- " + error + " for creating the account " + name + " and balance " + money + "\n";
             send(client_socket, response_message.c_str(), response_message.length(), 0);
+            key = "";
+            iv = "";
         }
         else if (mode == "d")
         {
             // deposit
 
-            string delta = to_string(request["amount"]);
+            string delta = request["amount"];
             string response_message;
 
             format_correction(delta);
@@ -1095,6 +1159,8 @@ void handle_client(int client_socket)
                 response_message = "Invalid input for deposit amount\n";
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
                 cout << "Invalid input for deposit amount :- " + delta + "\n";
+                key = "";
+                iv = "";
                 continue;
             }
 
@@ -1105,6 +1171,8 @@ void handle_client(int client_socket)
                 response_message = "Error Occured :- " + error + "\n";
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
                 cout << "Error Occured :- " << error << "\n";
+                key = "";
+                iv = "";
                 continue;
             }
 
@@ -1118,7 +1186,7 @@ void handle_client(int client_socket)
         {
             // withdraw
 
-            string delta = to_string(request["amount"]);
+            string delta = request["amount"];
             string response_message;
 
             format_correction(delta);
@@ -1127,6 +1195,8 @@ void handle_client(int client_socket)
                 response_message = "Invalid input for withdraw amount\n";
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
                 cout << "Invalid input for withdraw amount :- " + delta + "\n";
+                key = "";
+                iv = "";
                 continue;
             }
 
@@ -1137,6 +1207,8 @@ void handle_client(int client_socket)
                 response_message = "Error Occured :- " + error + "\n";
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
                 cout << "Error Occured :- " << error << "\n";
+                key = "";
+                iv = "";
                 continue;
             }
 
@@ -1157,6 +1229,8 @@ void handle_client(int client_socket)
                 response_message = "Error Occured :- " + error + " for account :- " + name + "\n";
                 cout << "Error Occured :- " + error + " for account :- " + name + "\n";
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
+                key = "";
+                iv = "";
                 continue;
             }
 
@@ -1167,6 +1241,8 @@ void handle_client(int client_socket)
         else
         {
             close(client_socket);
+            key = "";
+            iv = "";
         }
     }
 

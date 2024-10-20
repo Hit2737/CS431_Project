@@ -591,6 +591,7 @@ vector<unsigned char> from_hex_string(const string &hex)
     {
         string byteString = hex.substr(i, 2);
         unsigned char byte = static_cast<unsigned char>(stoi(byteString, nullptr, 16));
+
         bytes.push_back(byte);
     }
     return bytes;
@@ -714,9 +715,6 @@ string sendMessageToServer(const string &message, const string &ip, int port)
 
     generateKeyAndIV(SYM_KEY, IV);
 
-    cout << "Key: " << SYM_KEY << endl;
-    cout << "IV: " << IV << endl;
-
     string key_iv = SYM_KEY + IV;
     string key_iv_message;
     while (true)
@@ -730,31 +728,19 @@ string sendMessageToServer(const string &message, const string &ip, int port)
     key_iv_message.append("1");
     // Sending the Key and IV to the Bank Server for further communication
     send(sockfd, key_iv_message.c_str(), key_iv_message.size(), 0);
-
-    int n = read(sockfd, buffer, BUFFER_SIZE - 1);
-    if (n > 0)
-    {
-        buffer[n] = '\0';
-        cout << "Response from the Bank Server: " << string(buffer) << endl;
-    }
-    else
-    {
-        cerr << "Error: No second response received from the server." << endl;
-    }
     sleep(0.5);
 
     // Sending the Request to the Bank Server
-    // string message_mac = generateMAC(SYM_KEY,IV,message);
     string mess = message;
     string encrypted_message = encryptUsingSYM_KEY(SYM_KEY, IV, mess);
-    cout << encrypted_message.size() << endl;
     send(sockfd, encrypted_message.c_str(), encrypted_message.size(), 0);
 
-    n = read(sockfd, buffer, BUFFER_SIZE - 1);
+    int n = read(sockfd, buffer, BUFFER_SIZE - 1);
+    string response = decryptUsingSYM_KEY(SYM_KEY, IV, string(buffer));
     if (n > 0)
     {
-        buffer[n] = '\0';
-        cout << "Response from the Bank Server: " << string(buffer) << endl;
+        cout << "Response from the Bank Server: \n"
+             << response << endl;
     }
     else
     {
@@ -801,7 +787,6 @@ void createNewAccount(const string &account, string &balance, const string &card
     {
         exit(255);
     }
-    cout << response << endl;
     ofstream outfile(cardFile);
     if (!outfile)
     {

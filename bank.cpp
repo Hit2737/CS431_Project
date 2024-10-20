@@ -805,7 +805,7 @@ void create_table()
 
     if (executeSQL(create_table_sql, &messageError) != SQLITE_OK)
     {
-        cerr << "Table creation error :- " << messageError << endl;
+        cerr << "Table creation error: " << messageError << endl;
         sqlite3_free(messageError);
     }
 }
@@ -877,7 +877,7 @@ string withdraw(string name, string delta)
 
     if (executeSQL(begin_transaction, &messageError) != SQLITE_OK)
     {
-        final_message = "Begin transaction error :- " + string(messageError) + "\n";
+        final_message = "Begin transaction error: " + string(messageError) + "\n";
         sqlite3_free(messageError);
         return final_message;
     }
@@ -937,7 +937,7 @@ string deposit(string name, string delta)
 
     if (executeSQL(begin_transaction, &messageError) != SQLITE_OK)
     {
-        final_message = "Begin transaction error :- " + string(messageError) + "\n";
+        final_message = "Begin transaction error: " + string(messageError) + "\n";
         sqlite3_free(messageError);
         return final_message;
     }
@@ -997,10 +997,9 @@ void handle_client(int client_socket)
 
         if (n <= 0)
         {
-            break; // Connection closed by the client
+            break;
         }
 
-        // Parse the JSON message from the client
         string enc_message(buffer);
         if (enc_message.size() == 257)
         {
@@ -1008,20 +1007,16 @@ void handle_client(int client_socket)
             string key_iv = decryptUsingPrivateKey(enc_message);
             key = key_iv.substr(0, 128);
             iv = key_iv.substr(128, key_iv.size() - 128);
-            cout << "Key: " << key << endl;
-            cout << "IV: " << iv << endl;
-            send(client_socket, "Key and IV received\n", 21, 0);
             continue;
         }
         if (key == "" || iv == "")
         {
-            send(client_socket, "Key and IV not received\n", 25, 0);
             continue;
         }
 
         // Decrypt the message using the symmetric key and IV
         string message = decryptUsingSYM_KEY(key, iv, enc_message);
-        cout << "Message:" << message << endl;
+
         json request;
         try
         {
@@ -1030,7 +1025,8 @@ void handle_client(int client_socket)
         catch (...)
         {
             // Invalid JSON, ignore the request
-            send(client_socket, "Invalid JSON\n", 13, 0);
+            string response_message = encryptUsingSYM_KEY(key, iv, "Invalid JSON\n");
+            send(client_socket, response_message.c_str(), response_message.size(), 0);
         }
 
         // Process the request based on the operation
@@ -1043,9 +1039,9 @@ void handle_client(int client_socket)
         // validate account and password
         if (!check_input_for_sql_injection(name))
         {
-            string response_message = "Invalid input for Name\n";
+            string response_message = encryptUsingSYM_KEY(key, iv, "Invalid input for Name\n");
             send(client_socket, response_message.c_str(), response_message.length(), 0);
-            cout << "Invalid input for Name :- " + name + "\n";
+            cout << "Invalid input for Name: " + name + "\n\n";
             key = "";
             iv = "";
             continue;
@@ -1053,9 +1049,9 @@ void handle_client(int client_socket)
 
         if (!check_input_for_sql_injection(password))
         {
-            string response_message = "Invalid input for Password\n";
+            string response_message = encryptUsingSYM_KEY(key, iv, "Invalid input for Password\n");
             send(client_socket, response_message.c_str(), response_message.length(), 0);
-            cout << "Invalid input for Password :- " + password + "\n";
+            cout << "Invalid input for Password: " + password + "\n\n";
             key = "";
             iv = "";
             continue;
@@ -1071,9 +1067,9 @@ void handle_client(int client_socket)
         }
         else
         {
-            string response_message = "Error reading auth file\n";
+            string response_message = encryptUsingSYM_KEY(key, iv, "Error reading auth file\n");
             send(client_socket, response_message.c_str(), response_message.length(), 0);
-            cout << "Error reading auth file\n";
+            cout << "Error reading auth file\n\n";
             key = "";
             iv = "";
             continue;
@@ -1081,13 +1077,13 @@ void handle_client(int client_socket)
 
         if (auth_content == auth)
         {
-            cout << "Authentication successful\n";
+            cout << "Authentication successful\n\n";
         }
         else
         {
-            string response_message = "Authentication failed\n";
+            string response_message = encryptUsingSYM_KEY(key, iv, "Authentication failed\n");
             send(client_socket, response_message.c_str(), response_message.length(), 0);
-            cout << "Authentication failed\n";
+            cout << "Authentication failed\n\n";
             key = "";
             iv = "";
             continue;
@@ -1098,9 +1094,9 @@ void handle_client(int client_socket)
             string pass_check = check_password(name, password);
             if (pass_check != "")
             {
-                string response_message = "Error Occured while checking the password :- " + pass_check + "\n";
+                string response_message = encryptUsingSYM_KEY(key, iv, "Error Occured while checking the password: " + pass_check + "\n");
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
-                cout << "Error Occured :- " + pass_check + " while checking the password for the account :- " + name + "\n";
+                cout << "Error Occured: " + pass_check + " while checking the password for the account: " + name + "\n\n";
                 key = "";
                 iv = "";
                 continue;
@@ -1116,9 +1112,9 @@ void handle_client(int client_socket)
             format_correction(money);
             if (money == "")
             {
-                response_message = "Invalid input for money\n";
+                response_message = encryptUsingSYM_KEY(key, iv, "Error Occured: Invalid input for money\n");
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
-                cout << "Invalid input for Balance :- " + money + "\n";
+                cout << "Error Occured: Invalid input for Balance: " + money + "\n\n";
                 key = "";
                 iv = "";
                 continue;
@@ -1128,20 +1124,19 @@ void handle_client(int client_socket)
 
             if (error == "")
             {
-                response_message = "Account has been created successfully!\n"
-                                   "Your details are as follows:-\n"
-                                   "Account Name :- " +
-                                   name +
-                                   "\n Account Balance :- " + money + "\n";
+                response_message = encryptUsingSYM_KEY(key, iv, "Account has been created successfully!\n"
+                                                                "Your details are as follow:\n"
+                                                                "Account Name: " +
+                                                                    name + "\nAccount Balance: " + money + "\n");
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
-                cout << "Account with name :- " + name + " and Balance :- " + money + " is created successfully.\n";
+                cout << "Account with name: " + name + " and Balance: " + money + " is created successfully.\n\n";
                 key = "";
                 iv = "";
                 continue;
             }
 
-            response_message = "Error Occured :- " + error + "\n";
-            cout << "Error occured :- " + error + " for creating the account " + name + " and balance " + money + "\n";
+            response_message = encryptUsingSYM_KEY(key, iv, "Error Occured: " + error + "\n");
+            cout << "Error occured: " + error + " for creating the account " + name + " and balance " + money + "\n";
             send(client_socket, response_message.c_str(), response_message.length(), 0);
             key = "";
             iv = "";
@@ -1156,9 +1151,9 @@ void handle_client(int client_socket)
             format_correction(delta);
             if (delta == "")
             {
-                response_message = "Invalid input for deposit amount\n";
+                response_message = encryptUsingSYM_KEY(key, iv, "Invalid input for deposit amount\n");
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
-                cout << "Invalid input for deposit amount :- " + delta + "\n";
+                cout << "Invalid input for deposit amount : " + delta + "\n\n";
                 key = "";
                 iv = "";
                 continue;
@@ -1168,9 +1163,9 @@ void handle_client(int client_socket)
 
             if (error != "")
             {
-                response_message = "Error Occured :- " + error + "\n";
+                response_message = encryptUsingSYM_KEY(key, iv, "Error Occured: " + error + "\n");
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
-                cout << "Error Occured :- " << error << "\n";
+                cout << "Error Occured: " << error << "\n\n";
                 key = "";
                 iv = "";
                 continue;
@@ -1178,8 +1173,8 @@ void handle_client(int client_socket)
 
             string changed_balance = get_balance(name);
 
-            response_message = "Money deposited succesfully and your updated balance is " + changed_balance + "\n";
-            cout << "Money deposited from the account " + name + " and the updated balance is " + changed_balance + "\n";
+            response_message = encryptUsingSYM_KEY(key, iv, "Money deposited succesfully and your updated balance is " + changed_balance + "\n");
+            cout << "Money deposited in the account " + name + " and the updated balance is " + changed_balance + "\n\n";
             send(client_socket, response_message.c_str(), response_message.length(), 0);
         }
         else if (mode == "w")
@@ -1192,9 +1187,9 @@ void handle_client(int client_socket)
             format_correction(delta);
             if (delta == "")
             {
-                response_message = "Invalid input for withdraw amount\n";
+                response_message = encryptUsingSYM_KEY(key, iv, "Invalid input for withdraw amount\n");
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
-                cout << "Invalid input for withdraw amount :- " + delta + "\n";
+                cout << "Invalid input for withdraw amount: " + delta + "\n\n";
                 key = "";
                 iv = "";
                 continue;
@@ -1204,9 +1199,9 @@ void handle_client(int client_socket)
 
             if (error != "")
             {
-                response_message = "Error Occured :- " + error + "\n";
+                response_message = encryptUsingSYM_KEY(key, iv, "Error Occured: " + error + "\n");
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
-                cout << "Error Occured :- " << error << "\n";
+                cout << "Error Occured: " << error << "\n\n";
                 key = "";
                 iv = "";
                 continue;
@@ -1214,8 +1209,8 @@ void handle_client(int client_socket)
 
             string changed_balance = get_balance(name);
 
-            response_message = "Money withdrawed succesfully and your updated balance is " + changed_balance + "\n";
-            cout << "Money withdrawed from the account " + name + " and the updated balance is " + changed_balance + "\n";
+            response_message = encryptUsingSYM_KEY(key, iv, "Money withdrawed succesfully and your updated balance is " + changed_balance + "\n");
+            cout << "Money withdrew from the account " + name + " and the updated balance is " + changed_balance + "\n\n";
             send(client_socket, response_message.c_str(), response_message.length(), 0);
         }
         else if (mode == "g")
@@ -1226,16 +1221,16 @@ void handle_client(int client_socket)
             format_correction(current_balance);
             if (current_balance == "")
             {
-                response_message = "Error Occured :- " + error + " for account :- " + name + "\n";
-                cout << "Error Occured :- " + error + " for account :- " + name + "\n";
+                response_message = encryptUsingSYM_KEY(key, iv, "Error Occured: " + error + " for account: " + name + "\n");
+                cout << "Error Occured: " + error + " for account: " + name + "\n\n";
                 send(client_socket, response_message.c_str(), response_message.length(), 0);
                 key = "";
                 iv = "";
                 continue;
             }
 
-            response_message = "Your Current Balance is :- " + current_balance + "\n";
-            cout << "Balance queried for the account :- " + name + " and its balance is :- " + current_balance + "\n";
+            response_message = encryptUsingSYM_KEY(key, iv, "Your Current Balance is: " + current_balance + "\n");
+            cout << "Balance queried for the account: " + name + " and its balance is: " + current_balance + "\n\n";
             send(client_socket, response_message.c_str(), response_message.length(), 0);
         }
         else

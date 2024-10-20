@@ -10,7 +10,7 @@ This project involves creating a secure communication system between an ATM clie
 
 3. <b>Bhavik Patel</b>: Took the wheel on connecting the bank and ATM, worked on the security module, and helped with the initial ideas. Imagine doing all that while some others were busy... elsewhere (on a "different kind" of project, perhaps?).
 
-4. <b>Gaurav Budhawani</b>: Props to him for trying to implement the transaction module with ChatGPT. It's just unfortunate that the AI was better at finding errors than Gaurav was at fixing them. But hey, he did stay busy—just not with this project.
+4. <b>Gaurav Budhawani</b>: Props to him for trying to implement the transaction module with ChatGPT. It's just unfortunate that the AI was better at finding errors than Gaurav was at fixing them. But hey, he did stay busy—just not with this project. Bro, atleast cared about deadline and tried to do something at last while others didn't.
 
 5. <b>Pranav Patil</b>: Focused on improving his problem-solving skills while the rest were trying to solve this problem. I’m sure that’ll be helpful in future assignments... but maybe not for this one?
 
